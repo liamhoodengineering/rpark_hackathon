@@ -28,6 +28,7 @@ const router = Router();
 
 const ANON_PIN_TTL_MS = 60 * 60 * 1000;
 const ANON_COOLDOWN_MS = 5 * 60 * 1000;
+const PIN_CREATE_DUPLICATE_THRESHOLD_M = 25;
 const anonymousPinCooldowns = new Map<string, number>();
 
 const listPinsSchema = z.object({
@@ -125,6 +126,19 @@ router.post(
     try {
       const body = createPinSchema.parse(req.body);
       const isAnonymous = !req.auth;
+
+      const nearbyPins = await PinService.listNearby({
+        lat: body.lat,
+        lng: body.lng,
+        radius: PIN_CREATE_DUPLICATE_THRESHOLD_M,
+      });
+
+      if (nearbyPins.length > 0) {
+        throw new HttpError(
+          409,
+          'A pin already exists nearby. Please interact with the existing pin instead of creating a duplicate.',
+        );
+      }
 
       if (isAnonymous) {
         enforceAnonymousCooldown(req);

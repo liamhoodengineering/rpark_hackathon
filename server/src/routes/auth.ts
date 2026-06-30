@@ -38,6 +38,10 @@ const locationSchema = z.object({
   lng: z.number().min(-180).max(180),
 });
 
+const trackingSchema = z.object({
+  enabled: z.boolean(),
+});
+
 function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn,
@@ -147,6 +151,29 @@ router.put(
         .select('*')
         .maybeSingle<UserRow>();
       if (error) throw new HttpError(500, 'Failed to update location');
+      if (!user) throw new HttpError(404, 'User not found');
+
+      res.json(toPublicUser(user));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.put(
+  '/me/alerts',
+  verifyJwt,
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { enabled } = trackingSchema.parse(req.body);
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .update({ alerts_enabled: enabled })
+        .eq('id', req.auth!.sub)
+        .select('*')
+        .maybeSingle<UserRow>();
+      if (error) throw new HttpError(500, 'Failed to update alert preference');
       if (!user) throw new HttpError(404, 'User not found');
 
       res.json(toPublicUser(user));

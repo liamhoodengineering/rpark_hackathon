@@ -10,6 +10,7 @@ create table if not exists users (
   display_name text not null,
   lat double precision,                  -- last known location (opt-in, for alerts)
   lng double precision,
+  alerts_enabled boolean not null default false,   -- receive nearby-hazard alerts + live-track location
   upvotes_received integer not null default 0,    -- credibility inputs
   downvotes_received integer not null default 0,
   created_at timestamptz default now()

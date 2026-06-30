@@ -13,6 +13,7 @@ export interface User {
   display_name: string;
   lat: number | null; // last known location (opt-in, for nearby-hazard alerts)
   lng: number | null;
+  alerts_enabled: boolean; // receive nearby-hazard alerts; live-track location while app open
   upvotes_received: number;
   downvotes_received: number;
   created_at: string;
