@@ -88,6 +88,14 @@ export class VoteService {
     }
   }
 
+  static async deleteVote(voteId: string): Promise<void> {
+    const { error } = await supabase.from('votes').delete().eq('id', voteId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
   static async syncPinVoteState(pinId: string, tally: VoteTally): Promise<PinStatus> {
     const nextStatus: PinStatus =
       tally.total >= 5 && tally.down > tally.up ? 'removed' : 'active';

@@ -24,6 +24,7 @@ let originalVoteMethods: {
   getUserVote: typeof VoteService.getUserVote;
   createVote: typeof VoteService.createVote;
   updateVote: typeof VoteService.updateVote;
+  deleteVote: typeof VoteService.deleteVote;
   syncPinVoteState: typeof VoteService.syncPinVoteState;
   syncReporterCredibility: typeof VoteService.syncReporterCredibility;
 };
@@ -68,6 +69,7 @@ before(async () => {
     getUserVote: VoteService.getUserVote,
     createVote: VoteService.createVote,
     updateVote: VoteService.updateVote,
+    deleteVote: VoteService.deleteVote,
     syncPinVoteState: VoteService.syncPinVoteState,
     syncReporterCredibility: VoteService.syncReporterCredibility,
   };
@@ -79,6 +81,7 @@ afterEach(() => {
   VoteService.getUserVote = originalVoteMethods.getUserVote;
   VoteService.createVote = originalVoteMethods.createVote;
   VoteService.updateVote = originalVoteMethods.updateVote;
+  VoteService.deleteVote = originalVoteMethods.deleteVote;
   VoteService.syncPinVoteState = originalVoteMethods.syncPinVoteState;
   VoteService.syncReporterCredibility = originalVoteMethods.syncReporterCredibility;
 });
@@ -154,6 +157,38 @@ test('POST /pins/:id/vote records a new vote inside radius', async () => {
   assert.deepEqual(res.body.tally, tally);
   assert.equal(created, true);
   assert.equal(credibilitySynced, true);
+});
+
+test('DELETE /pins/:id/vote removes the caller vote', async () => {
+  const tally: VoteTally = { up: 1, down: 0, total: 1 };
+
+  PinService.getById = async () => basePin;
+  VoteService.getUserVote = async () => ({ id: 'vote-1', vote_type: 'up' });
+
+  let deletedId = '';
+  VoteService.deleteVote = async (voteId) => {
+    deletedId = voteId;
+  };
+
+  VoteService.getTally = async () => tally;
+  VoteService.syncPinVoteState = async () => 'active';
+  VoteService.syncReporterCredibility = async () => undefined;
+
+  const res = await request(app)
+    .delete(`/pins/${basePin.id}/vote`)
+    .set('Authorization', `Bearer ${makeAuthToken('user-2')}`);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.message, 'Vote removed');
+  assert.deepEqual(res.body.tally, tally);
+  assert.equal(deletedId, 'vote-1');
+});
+
+test('DELETE /pins/:id/vote requires auth', async () => {
+  const res = await request(app).delete(`/pins/${basePin.id}/vote`);
+
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'Authentication required');
 });
 
 test('POST /pins/:id/vote rejects caller outside pin radius', async () => {
