@@ -63,6 +63,7 @@ const SEVERITY_COLOR: Record<Severity, string> = {
   High: '#ef4444',
 };
 const PIN_RADIUS_PANE = 'pin-radius-pane';
+const ROUTE_HAZARD_RADIUS_MULTIPLIER = 1.35;
 
 /** Draggable report marker — a divIcon avoids Leaflet's missing-image asset issue. */
 const reportIcon = L.divIcon({
@@ -118,10 +119,13 @@ export default function Map({
   const [destinationLabel, setDestinationLabel] = useState('');
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [showRouteHazards, setShowRouteHazards] = useState(false);
   const [routeError, setRouteError] = useState('');
 
   const selectedRoute =
     routeOptions.find((route) => route.id === selectedRouteId) ?? routeOptions[0] ?? null;
+
+  const selectedRouteHazardIds = new Set(selectedRoute?.hazards.map((hazard) => hazard.id) ?? []);
 
   const fetchPins = useCallback(async () => {
     try {
@@ -213,14 +217,23 @@ export default function Map({
     for (const pin of pins) {
       const color = SEVERITY_COLOR[pin.severity];
 
-      if (pin.id === selectedPinId) {
+      const shouldShowSelectedRadius = pin.id === selectedPinId;
+      const shouldShowRouteHazardRadius =
+        showRouteHazards && selectedRouteHazardIds.has(pin.id);
+
+      if (shouldShowSelectedRadius || shouldShowRouteHazardRadius) {
+        const radius = shouldShowRouteHazardRadius
+          ? pin.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER
+          : pin.radius_m;
+
         L.circle([pin.lat, pin.lng], {
           pane: PIN_RADIUS_PANE,
-          radius: pin.radius_m,
+          radius,
           color,
-          weight: 1,
+          weight: shouldShowRouteHazardRadius ? 2 : 1,
+          dashArray: shouldShowRouteHazardRadius ? '7 5' : undefined,
           fillColor: color,
-          fillOpacity: 0.1,
+          fillOpacity: shouldShowRouteHazardRadius ? 0.18 : 0.1,
           interactive: false,
         }).addTo(layer);
       }
@@ -241,7 +254,7 @@ export default function Map({
         onPinSelectRef.current(pin);
       });
     }
-  }, [pins, selectedPinId]);
+  }, [pins, selectedPinId, selectedRouteHazardIds, showRouteHazards]);
 
   useEffect(() => {
     setRouteOptions((currentRoutes) => {
@@ -399,6 +412,7 @@ export default function Map({
     routeLayerRef.current?.clearLayers();
     setRouteOptions([]);
     setSelectedRouteId(null);
+    setShowRouteHazards(false);
     setRouteError('');
     setActiveDestination(null);
     setDestinationLabel('');
@@ -429,6 +443,7 @@ export default function Map({
       routeLayer.clearLayers();
       setRouteOptions(rankedRoutes);
       setSelectedRouteId(rankedRoutes[0].id);
+      setShowRouteHazards(false);
       setActiveDestination(destination);
       setDestinationLabel(destination.label);
       setSearchResults([]);
@@ -438,6 +453,16 @@ export default function Map({
     } finally {
       setNavigating(false);
     }
+  }
+
+  function focusHazardOnMap(hazard: Pin) {
+    onPinSelectRef.current(hazard);
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    map.flyTo([hazard.lat, hazard.lng], Math.max(map.getZoom(), 16));
   }
 
   useEffect(() => {
@@ -685,9 +710,38 @@ export default function Map({
       )}
 
       {!reportMode && selectedRoute && selectedRoute.hazards.length > 0 && (
-        <div className="route-chip route-chip-warning" role="status" aria-live="polite">
+        <button
+          type="button"
+          className="route-chip route-chip-warning route-chip-button"
+          onClick={() => setShowRouteHazards((current) => !current)}
+          aria-expanded={showRouteHazards}
+        >
           Warning: route passes through {selectedRoute.hazards.length} hazard area(s). Highest severity:{' '}
-          {highestSeverity(selectedRoute.hazards)}.
+          {highestSeverity(selectedRoute.hazards)}. {showRouteHazards ? 'Hide hazards' : 'View hazards'}
+        </button>
+      )}
+
+      {!reportMode && selectedRoute && showRouteHazards && selectedRoute.hazards.length > 0 && (
+        <div className="route-hazards-panel" role="status" aria-live="polite">
+          <p className="route-hazards-title">Hazards on selected route</p>
+          <ul className="route-hazards-list">
+            {selectedRoute.hazards.map((hazard) => (
+              <li key={hazard.id}>
+                <button
+                  type="button"
+                  className="route-hazard-item"
+                  onClick={() => focusHazardOnMap(hazard)}
+                >
+                  <span>
+                    {hazard.name?.trim() || 'Unnamed hazard'}
+                    {' • '}
+                    {hazard.severity}
+                  </span>
+                  <span>{Math.round(hazard.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER)}m zone</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
