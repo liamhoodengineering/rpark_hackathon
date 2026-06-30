@@ -53,6 +53,17 @@
 - Added map/report styling in [client/src/index.css](../client/src/index.css) (`.map`, `.map-view`, `.report-fab`, `.report-panel`, draggable `.report-pin` divIcon). The draggable marker uses a `divIcon` (emoji) to avoid Leaflet's missing marker-image asset issue.
 - **Contract this UI expects from #3:** `GET /pins?lat&lng&radius` → `Pin[]`; `POST /pins` body `{ lat, lng, name?, description?, severity, radius_m }` → `Pin`; `DELETE /pins/:id`. Matches the spec's API surface and `types/domain.ts`.
 - Verified with `npm run typecheck --workspace client` (passes).
+### 2026-06-30 — Proximity email alerts on new pins
+
+- New users `lat`/`lng` columns (nullable, opt-in last-known location). Added `PUT /auth/me/location` ([server/src/routes/auth.ts](../server/src/routes/auth.ts)) and `authApi.setLocation` on the client.
+- New `AlertService.notifyNearbyUsers(pin)` ([server/src/service/AlertService.ts](../server/src/service/AlertService.ts)) — finds users within the pin's `radius_m` (`UserService.findWithinRadius`, bounding-box + Haversine in [server/src/lib/geo.ts](../server/src/lib/geo.ts)) and emails them the hazard name/severity/description. Reporter is excluded.
+- Hooked into `POST /pins` as **fire-and-forget** (wrapped in try/catch) so it never blocks or fails pin creation.
+- Updated `User` types (server + client). Tests: [server/tests/alert.notify.test.ts](../server/tests/alert.notify.test.ts).
+- **Live DB migration** (Supabase SQL editor):
+  ```sql
+  alter table users add column if not exists lat double precision;
+  alter table users add column if not exists lng double precision;
+  ```
 
 ### 2026-06-30 — Dropped PostGIS; pins use plain lat/lng
 

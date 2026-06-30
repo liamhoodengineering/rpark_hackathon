@@ -9,8 +9,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "email:test": "tsx scripts/send-test-email.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -30,6 +30,8 @@
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^22.5.0",
     "@types/nodemailer": "^8.0.1",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.1",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4"
   }

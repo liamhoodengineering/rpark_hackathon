@@ -6,6 +6,8 @@ export interface User {
   id: string;
   email: string;
   display_name: string;
+  lat: number | null;
+  lng: number | null;
   upvotes_received: number;
   downvotes_received: number;
   created_at: string;

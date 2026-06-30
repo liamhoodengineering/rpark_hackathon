@@ -13,4 +13,9 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<PublicUser>('/auth/me'),
+  setLocation: (lat: number, lng: number) =>
+    request<PublicUser>('/auth/me/location', {
+      method: 'PUT',
+      body: JSON.stringify({ lat, lng }),
+    }),
 };

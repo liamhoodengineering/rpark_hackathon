@@ -11,6 +11,8 @@ export interface User {
   id: string;
   email: string;
   display_name: string;
+  lat: number | null; // last known location (opt-in, for nearby-hazard alerts)
+  lng: number | null;
   upvotes_received: number;
   downvotes_received: number;
   created_at: string;
@@ -33,6 +35,33 @@ export interface Pin {
   status: PinStatus;
   expires_at: string | null; // anonymous: created_at + 1h; account: null
   created_at: string;
+}
+
+export interface PinLookupInput {
+  lat: number;
+  lng: number;
+  radius: number;
+}
+
+export interface PinCreateInput {
+  reporter_id: string | null;
+  lat: number;
+  lng: number;
+  name: string | null;
+  description: string | null;
+  severity: Severity;
+  radius_m: number;
+  expires_at: string | null;
+}
+
+export interface PinUpdateInput {
+  lat: number;
+  lng: number;
+  name: string | null;
+  description: string | null;
+  severity: Severity;
+  radius_m: number;
+  status: PinStatus;
 }
 
 export interface Vote {
