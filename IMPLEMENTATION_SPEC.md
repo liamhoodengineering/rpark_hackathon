@@ -6,7 +6,7 @@ tags:
 ---
 # Implementation Spec — PinPoint ("Waze for Pedestrians")
 
-> Buildable engineering spec derived from [[pinpoint_spec]]. See [[Hackathon Home]], [[The Prompt]], [[Judging Criteria]], [[Submission Checklist]].
+> Buildable engineering spec derived from [[pinpoint_spec]]. Role model: [[User roles]]. Schema: [[DB_schema (SQL)]]. See also [[Hackathon Home]], [[The Prompt]], [[Judging Criteria]], [[Submission Checklist]].
 
 ## Context
 This turns [[pinpoint_spec]] into a buildable plan for the Research Park Hackathon (deadline **10:00 PM**; judged on shipped app, data security, demo clarity; prizes: Most Creative / Most User Friendly). **Greenfield** build — no existing code.
@@ -17,9 +17,10 @@ This turns [[pinpoint_spec]] into a buildable plan for the Research Park Hackath
 - **Backend:** Node (Express)
 - **Database:** **Supabase** (managed Postgres + PostGIS + Storage)
 - **Auth:** **JWT** (email + password), issued by our Node backend
+- **Roles:** **Anonymous** (no login) can report; **Account** users report + vote + accrue credibility. Full breakdown in [[User roles]].
 - **Scope:** **3-feature MVP + one realized stretch goal.** Core MVP: **Plugged in** (Mapbox), **Where are you** (geo-anchored pins + proximity-gated voting), **Mob mentality** (crowd pins + votes drive removal). Bonus: **Ring ring** — email alerts when a matching hazard appears in a user's watch area. **Pitch ordering:** demo the tight 3-feature MVP first, then show email alerts as the "if we had more time" bonus.
 
-**Outcome:** a live web app where logged-in users drop hazard pins on a Mapbox map, and users physically within a pin's radius vote "Still here / Gone," with 24h vote expiry and a 5-vote-minimum majority removal rule. Users can also set **watch areas** with a minimum severity and receive an **email** when a qualifying new hazard is reported nearby.
+**Outcome:** a live web app where **anonymous or registered** users drop hazard pins on a Mapbox map. Account users within a pin's radius cast an **upvote** ("still here") or **downvote** ("gone"); a pin is removed once it has **≥5 votes and downvotes outweigh upvotes**. Anonymous pins also auto-expire after **1 hour**. Account reporters accrue a **credibility score** from votes on their pins. Users can also set **watch areas** with a minimum severity and receive an **email** when a qualifying new hazard is reported nearby.
 
 ---
 
@@ -43,39 +44,48 @@ Supabase  →  Postgres + PostGIS (pins, votes, users, watch_areas) + Storage (p
 ---
 
 ## Data Model (Postgres / PostGIS via Supabase)
+Canonical schema lives in [[DB_schema (SQL)]] — reproduced here for convenience.
 
 ```sql
 create extension if not exists postgis;
 
+-- Accounts. Anonymous reporters have NO row here.
 create table users (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,
-  password_hash text not null,          -- bcrypt
+  phone text,                            -- optional
+  password_hash text not null,           -- bcrypt
   display_name text not null,
+  upvotes_received integer not null default 0,    -- credibility inputs
+  downvotes_received integer not null default 0,
   created_at timestamptz default now()
+  -- credibility_score = upvotes_received - downvotes_received (computed on read)
 );
 
 create table pins (
   id uuid primary key default gen_random_uuid(),
-  reporter_id uuid not null references users(id),
-  geom geography(Point, 4326) not null, -- lng/lat
-  radius_m integer not null,
-  severity text not null check (severity in ('Low','Medium','High')),
+  reporter_id uuid references users(id),  -- NULL = anonymous report
+  geom geography(Point, 4326) not null,   -- lng/lat
+  name text,
   description text,
-  photo_url text,
+  severity text not null check (severity in ('Low','Medium','High')),
+  radius_m integer not null,
+  upvotes integer not null default 0,
+  downvotes integer not null default 0,
   status text not null default 'active' check (status in ('active','removed')),
+  expires_at timestamptz,                 -- anonymous: created_at + 1h; account: NULL
   created_at timestamptz default now()
 );
 create index pins_geom_idx on pins using gist (geom);
 
+-- One vote per ACCOUNT per pin. Anonymous users cannot vote.
 create table votes (
   id uuid primary key default gen_random_uuid(),
-  pin_id uuid not null references pins(id),
+  pin_id uuid not null references pins(id) on delete cascade,
   user_id uuid not null references users(id),
-  vote_type text not null check (vote_type in ('still_here','gone')),
-  cast_at timestamptz default now(),
-  expires_at timestamptz default now() + interval '24 hours',
-  unique (pin_id, user_id)               -- one active vote per user per pin
+  vote_type text not null check (vote_type in ('up','down')),
+  created_at timestamptz default now(),
+  unique (pin_id, user_id)
 );
 create index votes_pin_idx on votes(pin_id);
 
@@ -93,20 +103,23 @@ create index watch_areas_geom_idx on watch_areas using gist (geom);
 ```
 
 Notes:
-- `geography(Point,4326)` enables `ST_DWithin` for "pins near me" and "is this user inside the pin radius" — no app-side Haversine.
-- A vote is **active** when `expires_at > now()`. Expiry is enforced **lazily** (filter on every read/tally) — no cron job needed.
-- Re-voting after expiry: `unique(pin_id,user_id)` blocks a duplicate row, so the vote endpoint **upserts** (refreshes `cast_at`/`expires_at`/`vote_type`).
-- Severity is ranked **Low(1) < Medium(2) < High(3)** (reuses the `severity` vocabulary on `pins`). A pin matches a watch area when `pin.severity_rank >= watch.min_severity_rank` and the pin falls inside the watch radius.
+- `geography(Point,4326)` enables `ST_DWithin` for "pins near me", the proximity vote-gate, and email-alert matching — no app-side Haversine.
+- **Anonymous vs account** is decided by `pins.reporter_id` (`NULL` → anonymous, `expires_at = now()+1h`; non-null → persists). See [[User roles]].
+- **Lazy expiry:** filter `expires_at is null or expires_at > now()` on reads so expired anonymous pins drop off the map — no cron job.
+- **`upvotes`/`downvotes`** are denormalized counters on `pins`, kept in sync from the `votes` table on each vote and mirrored into the reporter's `users.upvotes_received`/`downvotes_received` for credibility.
+- Severity is ranked **Low(1) < Medium(2) < High(3)**. A pin matches a watch area when `pin.severity_rank >= watch.min_severity_rank` and it falls inside the watch radius.
 
 ---
 
 ## Removal Logic (single source of truth, runs after each vote)
-Recompute for the affected pin using only active votes:
-1. `active = votes where pin_id=? and expires_at > now()`
-2. If `count(active) >= 5` **and** `gone > still_here` → `pins.status='removed'`.
+Recompute for the affected pin after every vote:
+1. Tally `votes` for the pin: `up = count(vote_type='up')`, `down = count(vote_type='down')`.
+2. If `up + down >= 5` **and** `down > up` → `pins.status='removed'` (removal by ratio).
 3. Otherwise pin stays `active`.
+4. Sync the denormalized `pins.upvotes`/`downvotes` counters and the reporter's `users.upvotes_received`/`downvotes_received` (credibility).
 
-Reporter override: `DELETE /pins/:id` by the reporter sets `status='removed'` with no vote check.
+**Anonymous pins** additionally disappear at their 1-hour `expires_at` regardless of votes (lazy filter on read).
+**Owner override:** `DELETE /pins/:id` by the account that created it sets `status='removed'` with no vote check. (Anonymous pins have no owner to delete them — they just expire.)
 
 ---
 
@@ -119,7 +132,7 @@ After the pin is inserted, find recipients and email them — **before** returni
    where w.email_enabled = true
      and severity_rank($pin_severity) >= severity_rank(w.min_severity)
      and ST_DWithin(w.geom, $pin_geom, w.radius_m)
-     and w.user_id <> $reporter_id;   -- never email the reporter about their own pin
+     and ($reporter_id is null or w.user_id <> $reporter_id);  -- don't self-email an account reporter
    ```
 2. For each recipient, send one email via **Resend** containing: severity, short description, a **coarse area label** (neighborhood — *not* exact lat/lng), a link to the map, and an **unsubscribe / manage-alerts** link.
 3. **Wrap the whole block in try/catch.** On any Resend failure, log and continue — the pin must still publish and `POST /pins` must still return success.
@@ -133,24 +146,24 @@ After the pin is inserted, find recipients and email them — **before** returni
 | POST | `/auth/register` | – | email, password, display_name → JWT |
 | POST | `/auth/login` | – | email, password → JWT |
 | GET | `/auth/me` | JWT | current user |
-| GET | `/pins?lat=&lng=&radius=` | JWT | active pins near a point (`ST_DWithin`) |
-| POST | `/pins` | JWT | create pin (rate-limited); **on success, runs email-alert matching + send (synchronous, try/catch — never fails the response)** |
-| DELETE | `/pins/:id` | JWT | reporter-only delete |
+| GET | `/pins?lat=&lng=&radius=` | – | active, non-expired pins near a point (`ST_DWithin`) |
+| POST | `/pins` | optional | create pin. **Anonymous** (no token) → `reporter_id=NULL`, `expires_at=now()+1h`, subject to **5-min cooldown**; **account** (JWT) → persistent. On success runs email-alert matching + send (synchronous, try/catch — never fails the response) |
+| DELETE | `/pins/:id` | JWT | owner-only delete (account pins) |
 | POST | `/pins/:id/photo` | JWT | upload photo → Supabase Storage (EXIF stripped) |
-| GET | `/pins/:id/votes` | JWT | active tally `{still_here, gone, total}` |
-| POST | `/pins/:id/vote` | JWT | cast/refresh vote; server verifies caller within `radius_m`; runs removal logic |
+| GET | `/pins/:id/votes` | – | tally `{up, down, total}` |
+| POST | `/pins/:id/vote` | JWT | account-only; one up/down per user (`unique(pin_id,user_id)`); server verifies caller within `radius_m`; runs removal logic + credibility sync |
 | GET | `/watch-areas` | JWT | list the caller's watch areas |
 | POST | `/watch-areas` | JWT | create a watch area (lat, lng, radius, min_severity) |
 | DELETE | `/watch-areas/:id` | JWT | remove a watch area (owner-only) |
 
-Cross-cutting: `verifyJwt` middleware, `express-rate-limit` on `/pins`, `/vote`, and `/watch-areas`, zod validation, CORS locked to the frontend origin. Email alerts go through **Resend** via a server-side `sendHazardAlert(recipient, pin)` helper; `RESEND_API_KEY` and `ALERTS_FROM_EMAIL` are server-only env vars.
+Cross-cutting: `verifyJwt` middleware (required on votes/watch-areas/delete; **optional** on `POST /pins`), `express-rate-limit` on `/pins` (plus the per-device **5-min anonymous cooldown**), `/vote`, and `/watch-areas`, zod validation, CORS locked to the frontend origin. Email alerts go through **Resend** via a server-side `sendHazardAlert(recipient, pin)` helper; `RESEND_API_KEY` and `ALERTS_FROM_EMAIL` are server-only env vars.
 
 ---
 
 ## Frontend (React + Mapbox)
 - **Map view:** Mapbox GL JS, pins colored by severity (green/orange/red), radius drawn as a circle layer. Re-fetch on map `moveend` using viewport center + radius.
-- **Report flow:** "Report" → confirm/drag pin (defaults to `navigator.geolocation`) → radius slider → severity select → optional description/photo → `POST /pins`.
-- **Vote flow:** when GPS is inside a pin's radius, surface a "Is this still here?" card with **Still here / Gone**; show live tally; reporter sees a **Delete** button on their own pins.
+- **Report flow:** "Report" → confirm/drag pin (defaults to `navigator.geolocation`) → radius slider → severity select → optional description/photo → `POST /pins`. **Works logged-out** (anonymous); show a hint that anonymous pins expire after 1 hour and to sign in for persistent pins + voting.
+- **Vote flow (account only):** when GPS is inside a pin's radius, surface a "Is this still here?" card with **👍 Upvote / 👎 Downvote**; show live up/down tally and the reporter's credibility badge; account owner sees a **Delete** button on their own pins. Logged-out users see a "sign in to vote" prompt.
 - **Auth screens:** register/login; store JWT; attach `Authorization` header; redirect unauthenticated users.
 - **Geolocation:** request permission once, watch position, pass `lat/lng` to vote calls for server-side eligibility checks.
 - **Manage Alerts screen:** list watch areas; add one by dropping/dragging a point on the map + radius slider + min-severity selector + email on/off toggle; delete existing ones. Render watch-area circles as a distinct (dashed/muted) layer so they read separately from hazard pins. Include an unsubscribe/manage-alerts route reachable from the email link.
@@ -159,9 +172,9 @@ Cross-cutting: `verifyJwt` middleware, `express-rate-limit` on `/pins`, `/vote`,
 
 ## Data Security Checklist (judged criterion — build in from the start)
 - bcrypt password hashing; JWT signed with a server secret (env var), short expiry.
-- All writes require a valid JWT (no anonymous reports/votes).
-- `unique(pin_id,user_id)` prevents vote stacking.
-- `express-rate-limit` caps pins/votes per account per window.
+- **Voting, credibility, persistent pins, and watch areas all require a valid JWT.** Only *reporting* is open to anonymous users — and that is bounded by a **1-hour pin TTL + 5-minute per-device cooldown**, so anonymous access can't stuff votes, build reputation, or leave lasting spam. (Trade-off vs. fully-authed writes is intentional — see [[User roles]].)
+- `unique(pin_id,user_id)` prevents vote stacking; anonymous users can't vote at all.
+- `express-rate-limit` caps pins/votes per account per window; anonymous reports additionally gated by the 5-min cooldown.
 - Store only pin lat/lng — **no** continuous user-location logging.
 - Strip EXIF/GPS from uploaded photos (`sharp` re-encode drops metadata) before Storage.
 - Supabase **service-role key server-side only** — never in the browser bundle. Frontend talks only to our API.
@@ -197,9 +210,10 @@ Names are **Team Member #1–#6** so all AI agents reference the same owners. Fi
 - Seed script with a few demo pins for the live demo.
 
 ### Team Member #4 — Votes API (Voting backend)
-- `POST /pins/:id/vote` with server-side proximity gate (`ST_DWithin` caller vs pin), upsert/refresh-on-expiry, `GET /pins/:id/votes` active tally.
-- **Owns removal logic** (5-vote min + majority "gone", lazy 24h expiry).
-- Unit-test threshold/expiry edge cases (count drops back under 5, etc.).
+- `POST /pins/:id/vote` (account-only) with server-side proximity gate (`ST_DWithin` caller vs pin), one up/down per user, `GET /pins/:id/votes` up/down tally.
+- **Owns removal-by-ratio logic** (≥5 votes + `down > up`), the `upvotes`/`downvotes` counter sync, and the reporter **credibility** rollup (`users.upvotes_received`/`downvotes_received`).
+- Owns the **anonymous-pin 1-hour expiry** filter on reads.
+- Unit-test threshold/ratio edge cases (exactly 5 votes, tie, expiry).
 
 ### Team Member #5 — Frontend Map Lead (Plugged in + Report UI)
 - Mapbox GL JS integration, severity-colored pins, radius circle layer, fetch-on-`moveend`.
@@ -219,14 +233,15 @@ Names are **Team Member #1–#6** so all AI agents reference the same owners. Fi
 
 ## Verification (end-to-end)
 1. **Local boot:** `npm run dev` in `/server` and `/client`; React loads the Mapbox map.
-2. **Auth:** register → JWT → `/auth/me` returns the user; `POST /pins` without a token returns 401.
-3. **Report:** drop a pin via UI → appears on map → row exists in `pins` with correct `geom`/severity.
-4. **Proximity gate:** `POST /pins/:id/vote` from *outside* `radius_m` → rejected; from inside → accepted.
-5. **Removal rule:** 4 active "gone" votes → pin stays; 5th → pin flips to `removed`, drops off `GET /pins`. Manually expire votes (`expires_at` in the past) → tally recomputes.
-6. **Reporter delete:** reporter hits Delete → pin removed regardless of votes.
-7. **Security spot-checks:** service-role key absent from browser bundle; hammer `POST /pins` to trip rate limiter; upload a geotagged photo → stored file has no EXIF GPS.
-8. **Email alerts:** create a watch area for User A (radius R, `min_severity = High`). As User B: a **High** pin inside R → A gets an email; a **Low** pin inside R → **no** email (below threshold); a High pin **outside** R → no email. Reporter drops a High pin inside their **own** watch area → no self-email. Toggle `email_enabled` off → no email on a matching High pin. Confirm the email body has a coarse area (no exact lat/lng) and a working unsubscribe link. Force a Resend failure (bad key) → `POST /pins` still returns success and the pin appears on the map.
-9. **Deployed smoke test:** repeat 2–4 against the live URL on two devices/accounts (one "nearby") for the demo.
+2. **Auth & roles:** register → JWT → `/auth/me` returns the user; `POST /pins` **without** a token succeeds as anonymous (`reporter_id=NULL`, `expires_at≈now+1h`); a second anonymous report within 5 min is rejected by cooldown; `POST /pins/:id/vote` without a token returns 401.
+3. **Report:** drop a pin via UI (logged in and logged out) → appears on map → row exists in `pins` with correct `geom`/severity and the right `reporter_id`/`expires_at`.
+4. **Anonymous expiry:** set an anonymous pin's `expires_at` in the past → it drops off `GET /pins`.
+5. **Proximity gate:** `POST /pins/:id/vote` from *outside* `radius_m` → rejected; from inside → accepted.
+6. **Removal by ratio:** cast votes so a pin has 4 total → stays; reach 5 total with `down > up` → pin flips to `removed`, drops off `GET /pins`. Confirm the reporter's `upvotes_received`/`downvotes_received` (credibility) update.
+7. **Owner delete:** account owner hits Delete → pin removed regardless of votes.
+8. **Security spot-checks:** service-role key absent from browser bundle; hammer `POST /pins` to trip rate limiter; upload a geotagged photo → stored file has no EXIF GPS.
+9. **Email alerts:** create a watch area for User A (radius R, `min_severity = High`). As User B: a **High** pin inside R → A gets an email; a **Low** pin inside R → **no** email (below threshold); a High pin **outside** R → no email. Reporter drops a High pin inside their **own** watch area → no self-email. Toggle `email_enabled` off → no email on a matching High pin. Confirm the email body has a coarse area (no exact lat/lng) and a working unsubscribe link. Force a Resend failure (bad key) → `POST /pins` still returns success and the pin appears on the map.
+10. **Deployed smoke test:** repeat the report/vote flow against the live URL on two devices/accounts (one "nearby") for the demo.
 
 ## Submission Deliverables (owned by #1 + #6)
 GitHub repo · live Website URL · 2–3 min YouTube pitch · slideshow. Demo script follows [[pinpoint_spec]] §"Demo Script Sketch."
