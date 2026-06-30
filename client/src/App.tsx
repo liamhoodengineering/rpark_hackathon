@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { LiveLocationSync } from './components/LiveLocationSync.js';
+import MapView from './components/Map.js';
 import { NavBar } from './components/NavBar.js';
 import { ProtectedRoute } from './components/ProtectedRoute.js';
 import { VoteCard } from './components/VoteCard.js';
@@ -73,13 +74,16 @@ function MapPlaceholder({
 
 function MapPage() {
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
-  const [watchAreas] = useState<WatchArea[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { position } = useGeolocation();
 
   return (
     <div style={{ display: 'flex', flex: 1, position: 'relative' }}>
-      {/* Team Member #5 swaps MapPlaceholder for their <MapView> component */}
-      <MapPlaceholder onPinSelect={setSelectedPin} watchAreas={watchAreas} />
+      <MapView
+        onPinSelect={setSelectedPin}
+        userPosition={position}
+        refreshKey={refreshKey}
+      />
 
       {selectedPin && (
         <div
@@ -88,17 +92,18 @@ function MapPage() {
             bottom: '1rem',
             left: '50%',
             transform: 'translateX(-50%)',
-            zIndex: 10,
+            zIndex: 1100,
             width: 'min(400px, 90vw)',
           }}
         >
           <VoteCard
             pin={selectedPin}
             userPosition={position}
-            onVoteCast={() => {
-              // TODO: tell #5's map to refresh pins in viewport
+            onVoteCast={() => setRefreshKey((k) => k + 1)}
+            onPinRemoved={() => {
+              setSelectedPin(null);
+              setRefreshKey((k) => k + 1);
             }}
-            onPinRemoved={() => setSelectedPin(null)}
           />
           <button
             style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }}

@@ -29,6 +29,7 @@
 | Pins routes                        | 🟦 Stub — Team Member #3              |
 | Votes routes                       | 🟦 Stub — Team Member #4              |
 | Client (Vite + React)              | ✅ Scaffolded (map + pages are stubs) |
+| Frontend map + report UI (#5)      | ✅ Implemented (pins API still a stub)|
 
 ---
 

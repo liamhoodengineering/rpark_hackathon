@@ -90,8 +90,15 @@ function enforceAnonymousCooldown(req: AuthedRequest): void {
 
 router.get('/', async (req, res, next) => {
   try {
-    const query = listPinsSchema.parse(req.query);
-    const pins = await PinService.listNearby(query);
+    const hasGeoQuery =
+      req.query.lat !== undefined ||
+      req.query.lng !== undefined ||
+      req.query.radius !== undefined;
+
+    const pins = hasGeoQuery
+      ? await PinService.listNearby(listPinsSchema.parse(req.query))
+      : await PinService.listAll();
+
     res.json(pins);
   } catch (error) {
     next(error);
