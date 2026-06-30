@@ -23,6 +23,12 @@ Central hub for everything about the hackathon. Start here.
 - [[Judging Criteria]] — how it gets scored
 - [[Feature Ideas]] — scratchpad for our chosen features
 
+### Build docs
+- [[IMPLEMENTATION_SPEC]] — canonical engineering spec + 6-person work division
+- [[pinpoint_spec]] — original product idea/brainstorm
+- [[User roles]] — anonymous vs account roles & permissions
+- [[DB_schema (SQL)]] — Postgres/PostGIS schema
+
 ## Quick Status
 - [ ] Pick 3 features (see [[The Prompt]])
 - [ ] Build live web application
