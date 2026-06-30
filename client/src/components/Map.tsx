@@ -107,6 +107,7 @@ export default function Map({
   const [reportLatLng, setReportLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [reportRadius, setReportRadius] = useState(100);
   const [reportSeverity, setReportSeverity] = useState<Severity>('Medium');
+  const [reportExpiresHours, setReportExpiresHours] = useState(24);
   const [reportName, setReportName] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -415,6 +416,7 @@ export default function Map({
     setReportLatLng(start);
     setReportName('');
     setReportDescription('');
+    setReportExpiresHours(user ? 24 : 1);
     setReportError('');
     setReportMode(true);
     map.panTo([start.lat, start.lng]);
@@ -596,6 +598,7 @@ export default function Map({
         description: reportDescription.trim() || undefined,
         severity: reportSeverity,
         radius_m: reportRadius,
+        expires_in_hours: reportExpiresHours,
       });
       cancelReport();
       fetchPins();
@@ -844,6 +847,18 @@ export default function Map({
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="report-field">
+            Expires in: {reportExpiresHours}h
+            <input
+              type="range"
+              min={1}
+              max={24}
+              step={1}
+              value={reportExpiresHours}
+              onChange={(e) => setReportExpiresHours(Number(e.target.value))}
+            />
           </label>
 
           <label className="report-field">
