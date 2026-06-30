@@ -43,15 +43,3 @@ create table if not exists votes (
   unique (pin_id, user_id)
 );
 create index if not exists votes_pin_idx on votes(pin_id);
-
-create table if not exists watch_areas (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id),
-  geom geography(Point, 4326) not null,     -- center of the watch zone
-  radius_m integer not null,
-  min_severity text not null default 'Low'
-    check (min_severity in ('Low','Medium','High')),
-  email_enabled boolean not null default true,
-  created_at timestamptz default now()
-);
-create index if not exists watch_areas_geom_idx on watch_areas using gist (geom);

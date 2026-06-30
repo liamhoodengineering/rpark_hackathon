@@ -21,11 +21,3 @@ export const voteLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many vote requests, please try again later' },
 });
-
-export const watchAreaLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many watch-area requests, please try again later' },
-});

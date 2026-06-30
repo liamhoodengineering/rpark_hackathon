@@ -44,17 +44,6 @@ export interface Vote {
   created_at: string;
 }
 
-export interface WatchArea {
-  id: string;
-  user_id: string;
-  lng: number;
-  lat: number;
-  radius_m: number;
-  min_severity: Severity;
-  email_enabled: boolean;
-  created_at: string;
-}
-
 /** Decoded JWT payload attached to authenticated requests. */
 export interface AuthPayload {
   sub: string; // user id

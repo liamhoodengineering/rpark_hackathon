@@ -8,14 +8,13 @@ import { pinsLimiter } from '../middleware/rateLimit.js';
 import { HttpError } from '../middleware/errorHandler.js';
 
 /**
- * Pins + watch-area email-alert routes — OWNER: Team Member #3 (Pins API).
+ * Pins routes — OWNER: Team Member #3 (Pins API).
  *
  * TODO:
  *  - GET    /pins?lat=&lng=&radius=  → active, non-expired pins via ST_DWithin (public)
  *  - POST   /pins                    → create pin (optionalJwt):
  *        anonymous → reporter_id=NULL, expires_at=now()+1h, 5-min per-device cooldown
  *        account   → persistent
- *        on success: run email-alert matching + sendHazardAlert (try/catch, never fails response)
  *  - DELETE /pins/:id                → owner-only delete (verifyJwt)
  *  - POST   /pins/:id/photo          → upload to Supabase Storage, EXIF-stripped (Team Member #2)
  *

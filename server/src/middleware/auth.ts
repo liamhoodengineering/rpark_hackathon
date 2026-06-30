@@ -20,7 +20,7 @@ function extractToken(req: Request): string | null {
 
 /**
  * Requires a valid JWT. Responds 401 if missing/invalid.
- * Use on votes, watch-areas, deletes, and any account-only route.
+ * Use on votes, deletes, and any account-only route.
  */
 export function verifyJwt(
   req: AuthedRequest,

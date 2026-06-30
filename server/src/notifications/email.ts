@@ -1,13 +1,21 @@
-import { Resend, type CreateEmailResponseSuccess } from 'resend';
+import nodemailer, { type Transporter } from 'nodemailer';
 
 /**
- * Email notifications via Resend (https://resend.com).
- * Free tier: 3,000 emails/month (100/day).
+ * Email notifications over SMTP via Nodemailer.
+ *
+ * Works with any SMTP provider and can send to ANY recipient (no domain
+ * verification required, unlike the Resend/Mailgun sandbox).
  *
  * Required env vars:
- *   RESEND_API_KEY    - server-side API key from the Resend dashboard
- *   ALERTS_FROM_EMAIL - verified "from" address, e.g. "PinPoint <alerts@yourdomain.com>"
- *                       (during testing you can use "onboarding@resend.dev")
+ *   SMTP_HOST - e.g. "smtp.gmail.com"
+ *   SMTP_USER - SMTP username (for Gmail, your full address)
+ *   SMTP_PASS - SMTP password (for Gmail, a 16-char App Password)
+ * Optional:
+ *   SMTP_PORT - default 587 (use 465 for implicit TLS)
+ *   SMTP_FROM - "From" address; defaults to SMTP_USER
+ *
+ * Gmail setup: enable 2-Step Verification, then create an App Password
+ * (Google Account -> Security -> App passwords) and use it as SMTP_PASS.
  */
 
 export interface SendEmailOptions {
@@ -17,19 +25,30 @@ export interface SendEmailOptions {
   html?: string;
 }
 
-let resendClient: Resend | undefined;
+let transporter: Transporter | undefined;
 
-function getClient(): Resend {
-  if (!resendClient) {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
+function getTransporter(): Transporter {
+  if (!transporter) {
+    const host = process.env.SMTP_HOST;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    if (!host || !user || !pass) {
       throw new Error(
-        'sendEmail: RESEND_API_KEY environment variable is not set',
+        'sendEmail: SMTP_HOST, SMTP_USER, and SMTP_PASS must all be set',
       );
     }
-    resendClient = new Resend(apiKey);
+
+    const port = Number(process.env.SMTP_PORT ?? '587');
+
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465, // implicit TLS on 465, STARTTLS otherwise
+      auth: { user, pass },
+    });
   }
-  return resendClient;
+  return transporter;
 }
 
 /**
@@ -38,13 +57,13 @@ function getClient(): Resend {
  * @param email   - recipient email address
  * @param message - plain-text message body
  * @param options - optional subject and HTML body
- * @returns the Resend response data
+ * @returns the SMTP message id
  */
 export async function sendEmail(
   email: string,
   message: string,
   options: SendEmailOptions = {},
-): Promise<CreateEmailResponseSuccess> {
+): Promise<string> {
   if (!email) {
     throw new Error('sendEmail: recipient email is required');
   }
@@ -52,11 +71,10 @@ export async function sendEmail(
     throw new Error('sendEmail: message is required');
   }
 
-  const from =
-    process.env.ALERTS_FROM_EMAIL ?? 'PinPoint <onboarding@resend.dev>';
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER;
   const subject = options.subject ?? 'PinPoint Notification';
 
-  const { data, error } = await getClient().emails.send({
+  const info = await getTransporter().sendMail({
     from,
     to: email,
     subject,
@@ -64,15 +82,5 @@ export async function sendEmail(
     ...(options.html ? { html: options.html } : {}),
   });
 
-  if (error) {
-    throw new Error(
-      `sendEmail: Resend failed: ${error.message ?? JSON.stringify(error)}`,
-    );
-  }
-
-  if (!data) {
-    throw new Error('sendEmail: Resend returned no data');
-  }
-
-  return data;
+  return info.messageId;
 }

@@ -1,7 +1,7 @@
 /**
  * Typed fetch wrapper for the PinPoint API.
  * Attaches the JWT (when present) and centralizes base URL + error handling.
- * Extend with pins/votes/auth/watch-area calls as endpoints land.
+ * Extend with pins/votes/auth calls as endpoints land.
  */
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
@@ -53,5 +53,5 @@ export interface HealthResponse {
 export const api = {
   health: () => request<HealthResponse>('/health'),
   // TODO: auth.register/login/me, pins.list/create/delete,
-  //       votes.tally/cast, watchAreas.list/create/delete
+  //       votes.tally/cast
 };

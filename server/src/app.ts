@@ -5,7 +5,6 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import authRouter from './routes/auth.js';
 import pinsRouter from './routes/pins.js';
 import votesRouter from './routes/votes.js';
-import watchAreasRouter from './routes/watchAreas.js';
 
 /**
  * Builds and configures the Express application.
@@ -36,7 +35,6 @@ export function createApp(): Express {
   app.use('/pins', pinsRouter);
   // Votes live under /pins/:id/vote — mounted on /pins as well
   app.use('/pins', votesRouter);
-  app.use('/watch-areas', watchAreasRouter);
 
   // 404 + error handling (must be last)
   app.use(notFoundHandler);

@@ -13,7 +13,7 @@
 ## Project at a glance
 
 - **App:** PinPoint — live crowd-sourced pedestrian hazard map.
-- **Stack:** React + Mapbox GL JS (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · Resend (email) · Twilio (SMS).
+- **Stack:** React + Leaflet (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · SMTP email (Nodemailer).
 - **Spec:** see [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) and [docs/pinpoint_spec.md](docs/pinpoint_spec.md).
 - **Layout:** `server/` (API) · `client/` (SPA) · `docs/` (specs).
 
@@ -21,19 +21,54 @@
 
 | Area                               | State                                 |
 | ---------------------------------- | ------------------------------------- |
-| Notification module (email + SMS)  | ✅ Implemented (typed)                |
+| Notification module (email)        | ✅ Implemented (typed)                |
 | Repo / monorepo scaffold           | ✅ Implemented                        |
 | Server app skeleton + middleware   | ✅ Scaffolded (routes are stubs)      |
 | DB schema (`server/db/schema.sql`) | ✅ Written (run against Supabase)     |
 | Auth routes                        | 🟦 Stub — Team Member #2              |
 | Pins routes                        | 🟦 Stub — Team Member #3              |
 | Votes routes                       | 🟦 Stub — Team Member #4              |
-| Watch-areas routes                 | 🟦 Stub — Team Member #3              |
 | Client (Vite + React)              | ✅ Scaffolded (map + pages are stubs) |
 
 ---
 
 ## Changelog
+
+### 2026-06-30 — Email provider: Resend → SMTP (Nodemailer)
+
+- Resend (and Mailgun sandbox) can't send to arbitrary recipients without a verified domain. Switched the email helper to **SMTP via Nodemailer** so it can email anyone with no domain (e.g. Gmail App Password).
+- Rewrote [server/src/notifications/email.ts](../server/src/notifications/email.ts); same `sendEmail(email, message, options?)` signature, now returns the SMTP `messageId`.
+- Swapped deps: removed `resend`, added `nodemailer` + `@types/nodemailer`.
+- New env vars in `server/.env`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (replaced `RESEND_API_KEY`/`ALERTS_FROM_EMAIL`). Updated `server/src/config/env.ts`.
+- Test with: `npm run email:test --workspace server -- you@example.com`.
+- **Gmail setup:** enable 2-Step Verification → create an App Password → use it as `SMTP_PASS`.
+
+### 2026-06-30 — Synced IMPLEMENTATION_SPEC with current code
+
+- Updated [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) to match the code: removed all **watch areas** content (table, `/watch-areas` endpoints, email-alert match logic, "Manage Alerts" UI, "Ring ring" stretch goal) and reflected **email-only** notifications.
+- Replaced the "Email Alert Logic" section with a short "Notifications (email-only)" note describing the generic `sendEmail` helper; trimmed the affected work-division, data-security, and verification items.
+
+### 2026-06-30 — Removed SMS notifications (email-only)
+
+- Notifications are now **email-only**. Dropped the SMS/Twilio system entirely.
+- Deleted `server/src/notifications/sms.ts`; removed its export from `notifications/index.ts`.
+- Removed Twilio env vars from `server/src/config/env.ts` and `server/.env`, and the `twilio` dependency from `server/package.json` (uninstalled).
+
+### 2026-06-30 — Switched map library Mapbox → Leaflet
+
+- Mapbox requires billing, so the client now uses **Leaflet + OpenStreetMap** tiles (free, no API key).
+- Swapped deps in `client/package.json` (`leaflet` + `@types/leaflet`, removed `mapbox-gl`).
+- Removed `VITE_MAPBOX_TOKEN` from `client/.env` and `client/src/vite-env.d.ts`.
+- Added `client/src/components/Map.tsx` (base map with OSM tile layer) and wired it into `App.tsx`; added `.map` styling in `index.css`.
+- Team Member #5: add hazard pins (severity markers + radius circles) + fetch-on-`moveend` to the new Map component.
+
+### 2026-06-30 — Removed WatchAreas (email-alert / "Ring ring" bonus)
+
+- Dropped the watch-areas feature from the codebase per product decision.
+- Deleted `server/src/routes/watchAreas.ts`; unmounted its router in `server/src/app.ts`.
+- Removed `watchAreaLimiter` (`server/src/middleware/rateLimit.ts`), the `WatchArea` type (`server/src/types/index.ts`), and the `watch_areas` table + index (`server/db/schema.sql`).
+- Cleaned up watch-area mentions in comments (`routes/pins.ts`, `middleware/auth.ts`, `client/src/api/client.ts`).
+- Note: the design docs (`docs/IMPLEMENTATION_SPEC.md`, `docs/DB_schema (SQL).md`) still describe watch areas — left untouched; update if the spec should reflect the removal.
 
 ### 2026-06-30 — Port change (client 3000, server 8080)
 
