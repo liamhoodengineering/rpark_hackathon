@@ -17,8 +17,10 @@ export interface CreatePinBody {
 }
 
 export const pinsApi = {
-  list: ({ lat, lng, radius }: ListPinsParams) =>
-    request<Pin[]>(`/pins?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${encodeURIComponent(Math.round(radius))}`),
+  list: (params?: ListPinsParams) =>
+    params
+      ? request<Pin[]>(`/pins?lat=${encodeURIComponent(params.lat)}&lng=${encodeURIComponent(params.lng)}&radius=${encodeURIComponent(Math.round(params.radius))}`)
+      : request<Pin[]>('/pins'),
 
   create: (body: CreatePinBody) =>
     request<Pin>('/pins', { method: 'POST', body: JSON.stringify(body) }),
