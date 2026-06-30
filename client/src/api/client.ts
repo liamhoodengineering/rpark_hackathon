@@ -4,7 +4,7 @@
  * Extend with pins/votes/auth/watch-area calls as endpoints land.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 const TOKEN_KEY = 'pinpoint_jwt';
 
 export function getToken(): string | null {

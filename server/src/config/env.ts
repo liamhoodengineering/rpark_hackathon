@@ -19,8 +19,8 @@ function optional(name: string, fallback = ''): string {
 
 export const env = {
   nodeEnv: optional('NODE_ENV', 'development'),
-  port: Number(optional('PORT', '4000')),
-  clientOrigin: optional('CLIENT_ORIGIN', 'http://localhost:5173')
+  port: Number(optional('PORT', '8080')),
+  clientOrigin: optional('CLIENT_ORIGIN', 'http://localhost:3000')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean),

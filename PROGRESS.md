@@ -35,6 +35,12 @@
 
 ## Changelog
 
+### 2026-06-30 — Port change (client 3000, server 8080)
+
+- Server now runs on **8080**, client on **3000** (previously 4000 / 5173).
+- Updated defaults in `server/src/config/env.ts` (`PORT`, `CLIENT_ORIGIN`), `client/vite.config.ts` (dev port), and the API fallback in `client/src/api/client.ts`.
+- Updated `server/.env` (`PORT=8080`, `CLIENT_ORIGIN=http://localhost:3000`) and `client/.env` (`VITE_API_BASE_URL=http://localhost:8080`).
+
 ### 2026-06-30 — Full project scaffold
 
 - Created monorepo structure: root `package.json` (npm workspaces), `.gitignore`, this `PROGRESS.md`.
