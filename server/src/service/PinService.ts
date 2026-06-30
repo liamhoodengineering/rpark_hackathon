@@ -35,21 +35,31 @@ function expectSinglePin(data: PinRpcRow[] | null, error: { message: string } | 
 }
 
 export class PinService {
-	static async listNearby(input: PinLookupInput): Promise<Pin[]> {
+	static async listAll(): Promise<Pin[]> {
 		const { data, error } = await supabase
 			.from('pins')
 			.select(PIN_COLUMNS)
 			.eq('status', 'active')
 			.order('created_at', { ascending: false });
 
-		if (!error && data) {
-			const now = Date.now();
-			return (data as Pin[]).filter((pin) => {
-				if (pin.expires_at && new Date(pin.expires_at).getTime() <= now) {
-					return false;
-				}
-				return haversineMeters(input.lat, input.lng, pin.lat, pin.lng) <= input.radius;
-			});
+		if (error) {
+			throw new Error(error.message);
+		}
+
+		const now = Date.now();
+		return ((data ?? []) as Pin[]).filter(
+			(pin) => !pin.expires_at || new Date(pin.expires_at).getTime() > now,
+		);
+	}
+
+	static async listNearby(input: PinLookupInput): Promise<Pin[]> {
+		try {
+			const pins = await this.listAll();
+			return pins.filter(
+				(pin) => haversineMeters(input.lat, input.lng, pin.lat, pin.lng) <= input.radius,
+			);
+		} catch {
+			// Fall through to RPC if direct table access fails.
 		}
 
 		const rpc = await supabase.rpc('list_active_pins', {

@@ -16,6 +16,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 let app: Express;
 let PinService: typeof import('../src/service/PinService.js').PinService;
 let originalMethods: {
+  listAll: typeof PinService.listAll;
   listNearby: typeof PinService.listNearby;
   getById: typeof PinService.getById;
   create: typeof PinService.create;
@@ -55,6 +56,7 @@ before(async () => {
   app = createApp();
   PinService = pinServiceModule.PinService;
   originalMethods = {
+    listAll: PinService.listAll,
     listNearby: PinService.listNearby,
     getById: PinService.getById,
     create: PinService.create,
@@ -64,6 +66,7 @@ before(async () => {
 });
 
 afterEach(() => {
+  PinService.listAll = originalMethods.listAll;
   PinService.listNearby = originalMethods.listNearby;
   PinService.getById = originalMethods.getById;
   PinService.create = originalMethods.create;
@@ -99,6 +102,11 @@ test('GET /pins/:id returns a single pin', async () => {
 });
 
 test('POST /pins creates an anonymous pin with expiry', async () => {
+  PinService.listNearby = async (input) => {
+    assert.equal(input.radius, 25);
+    return [];
+  };
+
   PinService.create = async (input) => {
     assert.equal(input.reporter_id, null);
     assert.equal(input.name, null);
@@ -125,6 +133,34 @@ test('POST /pins creates an anonymous pin with expiry', async () => {
   assert.equal(res.status, 201);
   assert.equal(res.body.reporter_id, null);
   assert.ok(res.body.expires_at);
+});
+
+test('POST /pins rejects creating a duplicate pin that is too close', async () => {
+  PinService.listNearby = async (input) => {
+    assert.deepEqual(input, { lat: 33.7756, lng: -84.3963, radius: 25 });
+    return [basePin];
+  };
+
+  PinService.create = async () => {
+    assert.fail('create should not be called when a nearby duplicate pin exists');
+  };
+
+  const res = await request(app)
+    .post('/pins')
+    .send({
+      lat: 33.7756,
+      lng: -84.3963,
+      name: 'Crosswalk blocked duplicate',
+      description: 'Same hazard',
+      severity: 'Medium',
+      radius_m: 120,
+    });
+
+  assert.equal(res.status, 409);
+  assert.equal(
+    res.body.error,
+    'A pin already exists nearby. Please interact with the existing pin instead of creating a duplicate.',
+  );
 });
 
 test('PUT /pins/:id updates an owner pin', async () => {

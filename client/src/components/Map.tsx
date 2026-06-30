@@ -37,9 +37,6 @@ const SEVERITY_COLOR: Record<Severity, string> = {
   Medium: '#f97316',
   High: '#ef4444',
 };
-
-/** Cap the GET /pins radius so a fully zoomed-out map doesn't request the world. */
-const MAX_QUERY_RADIUS_M = 20_000;
 const PIN_RADIUS_PANE = 'pin-radius-pane';
 
 /** Draggable report marker — a divIcon avoids Leaflet's missing-image asset issue. */
@@ -85,15 +82,8 @@ export default function Map({
   const [reportError, setReportError] = useState('');
 
   const fetchPins = useCallback(async () => {
-    const map = mapRef.current;
-    if (!map) return;
-    const c = map.getCenter();
-    const radius = Math.min(
-      map.distance(c, map.getBounds().getNorthEast()),
-      MAX_QUERY_RADIUS_M,
-    );
     try {
-      const result = await pinsApi.list({ lat: c.lat, lng: c.lng, radius });
+      const result = await pinsApi.list();
       setPins(result);
     } catch {
       // Pins API may still be a stub (501) or unreachable — keep the map usable.
