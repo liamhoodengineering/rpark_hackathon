@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { MapView } from './components/MapView.js';
+import type { MapViewHandle } from './components/MapView.js';
 import { NavBar } from './components/NavBar.js';
 import { ProtectedRoute } from './components/ProtectedRoute.js';
+import { ReportForm } from './components/ReportForm.js';
 import { VoteCard } from './components/VoteCard.js';
 import { AuthProvider } from './contexts/AuthContext.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
@@ -11,76 +14,101 @@ import { RegisterPage } from './pages/RegisterPage.js';
 import { UnsubscribePage } from './pages/UnsubscribePage.js';
 import type { Pin, WatchArea } from './types/domain.js';
 
-/**
- * Map view shell. Team Member #5 replaces this with the real Mapbox component.
- * Props: onPinSelect (click handler), watchAreas (for dashed circle layer).
- *
- * Interface contract for #5:
- *   interface MapViewProps {
- *     onPinSelect: (pin: Pin | null) => void;
- *     watchAreas?: WatchArea[];
- *   }
- */
-function MapPlaceholder({
-  onPinSelect,
-}: {
-  onPinSelect: (pin: Pin | null) => void;
-  watchAreas?: WatchArea[];
-}) {
-  // Demo: clicking the placeholder surfaces a mock pin so VoteCard can be tested
-  const mockPin: Pin = {
-    id: 'demo-pin-1',
-    reporter_id: null,
-    lat: 40.7128,
-    lng: -74.006,
-    name: 'Demo Hazard',
-    description: 'Wet floor near the fountain',
-    severity: 'Medium',
-    radius_m: 100,
-    upvotes: 3,
-    downvotes: 1,
-    status: 'active',
-    expires_at: new Date(Date.now() + 45 * 60_000).toISOString(),
-    created_at: new Date().toISOString(),
-  };
-
-  return (
-    <div
-      className="map-placeholder"
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#1a2332',
-        color: '#94a3b8',
-        gap: '1rem',
-        minHeight: '60vh',
-      }}
-    >
-      <p>🗺 Map coming from Team Member #5</p>
-      <button className="btn btn-primary" onClick={() => onPinSelect(mockPin)}>
-        Simulate pin click (test VoteCard)
-      </button>
-      <button className="btn btn-ghost" onClick={() => onPinSelect(null)}>
-        Clear selection
-      </button>
-    </div>
-  );
-}
-
 function MapPage() {
-  const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
-  const [watchAreas] = useState<WatchArea[]>([]);
+  const mapRef = useRef<MapViewHandle>(null);
   const { position } = useGeolocation();
 
-  return (
-    <div style={{ display: 'flex', flex: 1, position: 'relative' }}>
-      {/* Team Member #5 swaps MapPlaceholder for their <MapView> component */}
-      <MapPlaceholder onPinSelect={setSelectedPin} watchAreas={watchAreas} />
+  const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
+  const [watchAreas] = useState<WatchArea[]>([]);
 
-      {selectedPin && (
+  const [reportMode, setReportMode] = useState(false);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [pendingLat, setPendingLat] = useState<number | null>(null);
+  const [pendingLng, setPendingLng] = useState<number | null>(null);
+
+  function openReportMode() {
+    setSelectedPin(null);
+    setShowReportForm(false);
+    // Pre-fill location from GPS if available
+    if (position) {
+      setPendingLat(position.lat);
+      setPendingLng(position.lng);
+    } else {
+      setPendingLat(null);
+      setPendingLng(null);
+    }
+    setReportMode(true);
+  }
+
+  function handleLocationPicked(lat: number, lng: number) {
+    setPendingLat(lat);
+    setPendingLng(lng);
+    setShowReportForm(true);
+  }
+
+  function handlePinCreated(pin: Pin) {
+    setShowReportForm(false);
+    setReportMode(false);
+    setPendingLat(null);
+    setPendingLng(null);
+    setSelectedPin(pin);
+    mapRef.current?.refreshPins();
+  }
+
+  function cancelReport() {
+    setShowReportForm(false);
+    setReportMode(false);
+    setPendingLat(null);
+    setPendingLng(null);
+  }
+
+  return (
+    <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+      <MapView
+        ref={mapRef}
+        onPinSelect={(pin) => {
+          if (reportMode) return;
+          setSelectedPin(pin);
+        }}
+        watchAreas={watchAreas}
+        reportMode={reportMode}
+        onLocationPicked={handleLocationPicked}
+      />
+
+      {/* Report FAB — hidden while report mode or form is open */}
+      {!reportMode && !showReportForm && (
+        <button className="report-fab" onClick={openReportMode}>
+          ＋ Report
+        </button>
+      )}
+
+      {/* Instruction pill shown while user is picking a location */}
+      {reportMode && !showReportForm && (
+        <div className="report-mode-hint">
+          Click the map to place your hazard pin
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ marginLeft: '0.75rem' }}
+            onClick={cancelReport}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Report form modal */}
+      {showReportForm && (
+        <ReportForm
+          initialLat={pendingLat}
+          initialLng={pendingLng}
+          onSubmit={handlePinCreated}
+          onCancel={cancelReport}
+        />
+      )}
+
+      {/* Vote / pin detail card */}
+      {selectedPin && !showReportForm && (
         <div
           style={{
             position: 'absolute',
@@ -94,12 +122,14 @@ function MapPage() {
           <VoteCard
             pin={selectedPin}
             userPosition={position}
-            onVoteCast={() => {
-              // TODO: tell #5's map to refresh pins in viewport
+            onVoteCast={() => mapRef.current?.refreshPins()}
+            onPinRemoved={() => {
+              setSelectedPin(null);
+              mapRef.current?.refreshPins();
             }}
-            onPinRemoved={() => setSelectedPin(null)}
           />
           <button
+            type="button"
             style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }}
             className="btn btn-ghost btn-sm"
             onClick={() => setSelectedPin(null)}
@@ -116,22 +146,24 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
           <NavBar />
-          <Routes>
-            <Route path="/" element={<MapPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route
-              path="/alerts"
-              element={
-                <ProtectedRoute>
-                  <ManageAlertsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/unsubscribe" element={<UnsubscribePage />} />
-          </Routes>
+          <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+            <Routes>
+              <Route path="/" element={<MapPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route
+                path="/alerts"
+                element={
+                  <ProtectedRoute>
+                    <ManageAlertsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/unsubscribe" element={<UnsubscribePage />} />
+            </Routes>
+          </main>
         </div>
       </BrowserRouter>
     </AuthProvider>

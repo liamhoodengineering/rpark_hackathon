@@ -30,10 +30,23 @@
 | Votes routes                       | 🟦 Stub — Team Member #4              |
 | Watch-areas routes                 | 🟦 Stub — Team Member #3              |
 | Client (Vite + React)              | ✅ Scaffolded (map + pages are stubs) |
+| Mapbox map + pin layers            | ✅ Implemented — Team Member #5       |
+| Report flow UI                     | ✅ Implemented — Team Member #5       |
+| Pins API client (`api/pins.ts`)    | ✅ Implemented — Team Member #5       |
 
 ---
 
 ## Changelog
+
+### 2026-06-30 — Team Member #5: Mapbox map + report UI
+
+- **`client/src/api/pins.ts`** — `pinsApi.list/create/uploadPhoto` (photo is multipart, fire-and-forget).
+- **`client/src/components/MapView.tsx`** — Mapbox GL JS dark map; severity-colored circle markers; per-pin radius fill + line layers; watch-area dashed blue circles; `moveend` re-fetches pins; click marker → `onPinSelect`; report mode → click sets draggable blue marker → `onLocationPicked`. Exposes `MapViewHandle.refreshPins()` via `forwardRef` + `useImperativeHandle`.
+- **`client/src/components/ReportForm.tsx`** — modal overlay; radius slider 10–100m step 5 default 20; severity select; name/description/photo fields; anonymous expiry hint when logged out; photo upload is fire-and-forget after pin create.
+- **`client/src/App.tsx`** — replaced `MapPlaceholder` with `<MapView>`; wired `reportMode`, `onLocationPicked`, `onVoteCast`, `onPinRemoved` (`mapRef.refreshPins()`); added Report FAB + hint pill + `<ReportForm>` overlay; `<main>` wrapper for flex height so map fills viewport.
+- **`client/src/index.css`** — added `.report-fab`, `.report-mode-hint`, `.report-form-overlay`, `.report-form`, `.report-select`, `.report-textarea`, `.radius-display`, `.field-optional`.
+- **`client/.env.example`** — added `VITE_MAPBOX_TOKEN`. Set in Mapbox dashboard with URL restriction for security.
+- **Env var needed:** `VITE_MAPBOX_TOKEN` in `client/.env`.
 
 ### 2026-06-30 — Port change (client 3000, server 8080)
 
