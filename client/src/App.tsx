@@ -21,6 +21,7 @@ function MapPage() {
     <div style={{ display: 'flex', flex: 1, position: 'relative' }}>
       <MapView
         onPinSelect={setSelectedPin}
+        selectedPinId={selectedPin?.id ?? null}
         userPosition={position}
         refreshKey={refreshKey}
       />
