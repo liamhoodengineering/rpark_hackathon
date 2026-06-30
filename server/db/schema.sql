@@ -1,7 +1,7 @@
 -- PinPoint database schema (Supabase / Postgres + PostGIS)
 -- Run this in the Supabase SQL editor (or via migration) once per project.
 -- Canonical source: IMPLEMENTATION_SPEC.md §"Data Model".
-
+-- test
 create extension if not exists postgis;
 
 -- Accounts. Anonymous reporters have NO row here.
