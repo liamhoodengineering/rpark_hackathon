@@ -39,7 +39,7 @@ interface DestinationSearchResult {
 }
 
 type RouteMode = 'drive' | 'walk' | 'bike';
-type SeverityFilter = 'high_and_lower' | 'medium_and_lower' | 'low';
+type SeverityFilter = 'all' | 'High' | 'Medium' | 'Low';
 type TimeFilter = 'all' | '5m' | '10m' | '30m' | '1h' | '2h' | '6h' | '12h';
 
 interface RouteResult {
@@ -102,8 +102,7 @@ export default function Map({
 
   const { user } = useAuth();
   const [pins, setPins] = useState<Pin[]>([]);
-  const [severityFilter, setSeverityFilter] =
-    useState<SeverityFilter>('high_and_lower');
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   // ── Report flow state ──
@@ -114,7 +113,7 @@ export default function Map({
   } | null>(null);
   const [reportRadius, setReportRadius] = useState(100);
   const [reportSeverity, setReportSeverity] = useState<Severity>('Medium');
-  const [reportExpiresHours, setReportExpiresHours] = useState(24);
+  const [reportExpiresHours, setReportExpiresHours] = useState(1);
   const [reportName, setReportName] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -458,7 +457,7 @@ export default function Map({
     setReportLatLng(start);
     setReportName('');
     setReportDescription('');
-    setReportExpiresHours(user ? 24 : 1);
+    setReportExpiresHours(user ? 2 : 1);
     setReportError('');
     setReportMode(true);
     map.panTo([start.lat, start.lng]);
@@ -490,6 +489,7 @@ export default function Map({
     map.flyTo(
       [userPosition.lat, userPosition.lng],
       Math.max(map.getZoom(), 16),
+      { duration: 0.4 },
     );
   }
 
@@ -714,13 +714,18 @@ export default function Map({
 
   async function submitReport() {
     if (!reportLatLng) return;
+    const trimmedName = reportName.trim();
+    if (!trimmedName) {
+      setReportError('Title is required');
+      return;
+    }
     setSubmitting(true);
     setReportError('');
     try {
       await pinsApi.create({
         lat: reportLatLng.lat,
         lng: reportLatLng.lng,
-        name: reportName.trim() || undefined,
+        name: trimmedName,
         description: reportDescription.trim() || undefined,
         severity: reportSeverity,
         radius_m: reportRadius,
@@ -805,9 +810,10 @@ export default function Map({
                   setSeverityFilter(e.target.value as SeverityFilter)
                 }
               >
-                <option value='high_and_lower'>All</option>
-                <option value='medium_and_lower'>Medium &amp; Low</option>
-                <option value='low'>Low only</option>
+                <option value='all'>All</option>
+                <option value='High'>High</option>
+                <option value='Medium'>Medium</option>
+                <option value='Low'>Low</option>
               </select>
               <label className='map-filter-label' htmlFor='map-filter-time'>
                 Time
@@ -830,7 +836,7 @@ export default function Map({
             </div>
             <span className='map-filter-count'>
               <span className='live-dot' aria-hidden='true' />
-              {filteredPins.length} live
+              {filteredPins.length} live alerts
             </span>
           </div>
         )}
@@ -1040,11 +1046,12 @@ export default function Map({
             </label>
 
             <label className='report-field'>
-              Name (optional)
+              Name
               <input
                 type='text'
                 value={reportName}
                 maxLength={80}
+                required
                 placeholder='e.g. Broken glass'
                 onChange={(e) => setReportName(e.target.value)}
               />
@@ -1142,13 +1149,10 @@ function matchesSeverityFilter(
   severity: Severity,
   filter: SeverityFilter,
 ): boolean {
-  if (filter === 'high_and_lower') {
+  if (filter === 'all') {
     return true;
   }
-  if (filter === 'medium_and_lower') {
-    return severity === 'Medium' || severity === 'Low';
-  }
-  return severity === 'Low';
+  return severity === filter;
 }
 
 function routeUrlCandidates(

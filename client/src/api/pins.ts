@@ -10,7 +10,7 @@ export interface ListPinsParams {
 export interface CreatePinBody {
   lat: number;
   lng: number;
-  name?: string | null;
+  name: string;
   description?: string | null;
   severity: Severity;
   radius_m: number;
