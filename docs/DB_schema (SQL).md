@@ -18,6 +18,8 @@ create table users (
   email text unique not null,
   password_hash text not null,           -- bcrypt
   display_name text not null,
+  lat double precision,                  -- last known location (opt-in, for alerts)
+  lng double precision,
   upvotes_received integer not null default 0,    -- aggregated across this user's pins
   downvotes_received integer not null default 0,
   created_at timestamptz default now()
@@ -61,6 +63,7 @@ create index votes_pin_idx on votes(pin_id);
 - **Anonymous expiry:** filter out `expires_at < now()` on reads (lazy), so expired anonymous pins drop off the map without a cron job.
 - **5-minute anonymous cooldown** is enforced at the **app layer** (per device/IP), not in the schema — see [[User roles]].
 - Distance is computed app-side from `lat`/`lng` (bounding-box prefilter + **Haversine**) — no PostGIS at this scale.
+- **`users.lat`/`users.lng`** are an opt-in last-known location (set via `PUT /auth/me/location`). On new-pin creation, users within the pin's `radius_m` get an email hazard alert.
 - **Photos** (if used) live in Supabase Storage with EXIF stripped; a `photo_url` column can be added to `pins` when that lands.
 
 ## Related

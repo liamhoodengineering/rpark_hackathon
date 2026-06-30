@@ -33,6 +33,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const locationSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
 function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn,
@@ -119,6 +124,29 @@ router.get(
         .eq('id', req.auth!.sub)
         .maybeSingle<UserRow>();
       if (error) throw new HttpError(500, 'Failed to load account');
+      if (!user) throw new HttpError(404, 'User not found');
+
+      res.json(toPublicUser(user));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.put(
+  '/me/location',
+  verifyJwt,
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { lat, lng } = locationSchema.parse(req.body);
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .update({ lat, lng })
+        .eq('id', req.auth!.sub)
+        .select('*')
+        .maybeSingle<UserRow>();
+      if (error) throw new HttpError(500, 'Failed to update location');
       if (!user) throw new HttpError(404, 'User not found');
 
       res.json(toPublicUser(user));
