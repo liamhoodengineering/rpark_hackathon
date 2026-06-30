@@ -10,7 +10,6 @@ export type VoteType = 'up' | 'down';
 export interface User {
   id: string;
   email: string;
-  phone: string | null;
   display_name: string;
   upvotes_received: number;
   downvotes_received: number;

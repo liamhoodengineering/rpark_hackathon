@@ -18,7 +18,7 @@ This turns [[pinpoint_spec]] into a buildable plan for the Research Park Hackath
 - **Map API:** Leaflet + OpenStreetMap (free, no API key)
 - **Frontend:** React
 - **Backend:** Node (Express)
-- **Database:** **Supabase** (managed Postgres + PostGIS + Storage)
+- **Database:** **Supabase** (managed Postgres + Storage)
 - **Auth:** **JWT** (email + password), issued by our Node backend
 - **Roles:** **Anonymous** (no login) can report; **Account** users report + vote + accrue credibility. Full breakdown in [[User roles]].
 - **Scope:** **3-feature MVP.** Core MVP: **Plugged in** (Leaflet), **Where are you** (geo-anchored pins + proximity-gated voting), **Mob mentality** (crowd pins + votes drive removal).
@@ -39,25 +39,22 @@ Node + Express API (Render/Railway)
   - geo queries + removal logic
         │  supabase-js (service role key, server-side only)
         ▼
-Supabase  →  Postgres + PostGIS (pins, votes, users) + Storage (photos)
+Supabase  →  Postgres (pins, votes, users) + Storage (photos)
 ```
 
 **Why:** all DB access goes **through the Node API**, never from the browser. The Supabase service-role key lives only on the server. Auth, rate limiting, and removal logic live in one trusted place — this satisfies the data-security judging criterion.
 
 ---
 
-## Data Model (Postgres / PostGIS via Supabase)
+## Data Model (Postgres via Supabase)
 
 Canonical schema lives in [[DB_schema (SQL)]] — reproduced here for convenience.
 
 ```sql
-create extension if not exists postgis;
-
 -- Accounts. Anonymous reporters have NO row here.
 create table users (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,
-  phone text,                            -- optional
   password_hash text not null,           -- bcrypt
   display_name text not null,
   upvotes_received integer not null default 0,    -- credibility inputs
@@ -69,7 +66,8 @@ create table users (
 create table pins (
   id uuid primary key default gen_random_uuid(),
   reporter_id uuid references users(id),  -- NULL = anonymous report
-  geom geography(Point, 4326) not null,   -- lng/lat
+  lat double precision not null,
+  lng double precision not null,
   name text,
   description text,
   severity text not null check (severity in ('Low','Medium','High')),
@@ -80,7 +78,6 @@ create table pins (
   expires_at timestamptz,                 -- anonymous: created_at + 1h; account: NULL
   created_at timestamptz default now()
 );
-create index pins_geom_idx on pins using gist (geom);
 
 -- One vote per ACCOUNT per pin. Anonymous users cannot vote.
 create table votes (
@@ -96,7 +93,7 @@ create index votes_pin_idx on votes(pin_id);
 
 Notes:
 
-- `geography(Point,4326)` enables `ST_DWithin` for "pins near me" and the proximity vote-gate — no app-side Haversine.
+- Distance checks use plain `lat`/`lng` columns: prefilter with a lat/lng bounding box in SQL, then refine with the **Haversine** formula in the API for "pins near me" and the proximity vote-gate. No PostGIS needed at this scale.
 - **Anonymous vs account** is decided by `pins.reporter_id` (`NULL` → anonymous, `expires_at = now()+1h`; non-null → persists). See [[User roles]].
 - **Lazy expiry:** filter `expires_at is null or expires_at > now()` on reads so expired anonymous pins drop off the map — no cron job.
 - **`upvotes`/`downvotes`** are denormalized counters on `pins`, kept in sync from the `votes` table on each vote and mirrored into the reporter's `users.upvotes_received`/`downvotes_received` for credibility.
@@ -131,7 +128,7 @@ Notifications are **email-only** — the SMS/Twilio path was dropped. A generic 
 | POST   | `/auth/register`          | –        | email, password, display_name → JWT                                                                                                              |
 | POST   | `/auth/login`             | –        | email, password → JWT                                                                                                                            |
 | GET    | `/auth/me`                | JWT      | current user                                                                                                                                     |
-| GET    | `/pins?lat=&lng=&radius=` | –        | active, non-expired pins near a point (`ST_DWithin`)                                                                                             |
+| GET    | `/pins?lat=&lng=&radius=` | –        | active, non-expired pins near a point (bounding-box + Haversine)                                                                                 |
 | POST   | `/pins`                   | optional | create pin. **Anonymous** (no token) → `reporter_id=NULL`, `expires_at=now()+1h`, subject to **5-min cooldown**; **account** (JWT) → persistent. |
 | DELETE | `/pins/:id`               | JWT      | owner-only delete (account pins)                                                                                                                 |
 | POST   | `/pins/:id/photo`         | JWT      | upload photo → Supabase Storage (EXIF stripped)                                                                                                  |
@@ -172,7 +169,7 @@ Names are **Team Member #1–#6** so all AI agents reference the same owners. Fi
 ### Team Member #1 — Repo & Infra Lead (Backend foundation)
 
 - Scaffold monorepo (`/server`, `/client`), shared env config, README.
-- Stand up Supabase project; enable PostGIS + run the schema migration.
+- Stand up Supabase project; run the schema migration.
 - Express app skeleton, CORS, error handling, `supabase-js` wiring (service-role key).
 - **Owns deployment**: backend → Render/Railway, frontend → Vercel/Netlify; wires env vars; produces the **live Website URL** deliverable.
 - Unblocks everyone first, then floats to whichever side is behind.
@@ -187,13 +184,13 @@ Names are **Team Member #1–#6** so all AI agents reference the same owners. Fi
 
 ### Team Member #3 — Pins API (Report backend)
 
-- `GET /pins` (`ST_DWithin` near-query), `POST /pins`, `DELETE /pins/:id` (reporter-only).
+- `GET /pins` (lat/lng radius near-query), `POST /pins`, `DELETE /pins/:id` (reporter-only).
 - Severity/radius validation; only return `active` pins.
 - Seed script with a few demo pins for the live demo.
 
 ### Team Member #4 — Votes API (Voting backend)
 
-- `POST /pins/:id/vote` (account-only) with server-side proximity gate (`ST_DWithin` caller vs pin), one up/down per user, `GET /pins/:id/votes` up/down tally.
+- `POST /pins/:id/vote` (account-only) with server-side proximity gate (**Haversine** caller vs pin), one up/down per user, `GET /pins/:id/votes` up/down tally.
 - **Owns removal-by-ratio logic** (≥5 votes + `down > up`), the `upvotes`/`downvotes` counter sync, and the reporter **credibility** rollup (`users.upvotes_received`/`downvotes_received`).
 - Owns the **anonymous-pin 1-hour expiry** filter on reads.
 - Unit-test threshold/ratio edge cases (exactly 5 votes, tie, expiry).

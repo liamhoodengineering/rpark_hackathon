@@ -7,18 +7,15 @@ tags:
 
 # DB Schema (SQL) — PinPoint
 
-> Canonical Postgres/PostGIS schema (Supabase). See [[IMPLEMENTATION_SPEC]], [[User roles]], [[pinpoint_spec]].
+> Canonical Postgres schema (Supabase). See [[IMPLEMENTATION_SPEC]], [[User roles]], [[pinpoint_spec]].
 
-Reflects the evolved design: **anonymous reporting**, **upvote/downvote + credibility**, **optional phone**. All access goes through the Node API (service-role key server-side only).
+Reflects the evolved design: **anonymous reporting**, **upvote/downvote + credibility**. All access goes through the Node API (service-role key server-side only).
 
 ```sql
-create extension if not exists postgis;
-
 -- Accounts. Anonymous reporters have NO row here (see pins.reporter_id NULL).
 create table users (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,
-  phone text,                            -- optional
   password_hash text not null,           -- bcrypt
   display_name text not null,
   upvotes_received integer not null default 0,    -- aggregated across this user's pins
@@ -30,7 +27,8 @@ create table users (
 create table pins (
   id uuid primary key default gen_random_uuid(),
   reporter_id uuid references users(id),  -- NULL = anonymous report
-  geom geography(Point, 4326) not null,   -- lng/lat
+  lat double precision not null,
+  lng double precision not null,
   name text,                              -- short title for the report
   description text,
   severity text not null check (severity in ('Low','Medium','High')),  -- rank Low<Med<High
@@ -41,7 +39,6 @@ create table pins (
   expires_at timestamptz,                 -- anonymous: created_at + 1h; account: NULL (no expiry)
   created_at timestamptz default now()
 );
-create index pins_geom_idx on pins using gist (geom);
 create index pins_status_idx on pins(status);
 
 -- One vote per ACCOUNT per pin. Anonymous users cannot vote.
@@ -63,7 +60,7 @@ create index votes_pin_idx on votes(pin_id);
 - **Removal by ratio:** when a pin has **≥ 5 votes** and `downvotes > upvotes`, set `status = 'removed'`. Recomputed after each vote.
 - **Anonymous expiry:** filter out `expires_at < now()` on reads (lazy), so expired anonymous pins drop off the map without a cron job.
 - **5-minute anonymous cooldown** is enforced at the **app layer** (per device/IP), not in the schema — see [[User roles]].
-- `geography(Point,4326)` enables `ST_DWithin` for "pins near me" without app-side Haversine.
+- Distance is computed app-side from `lat`/`lng` (bounding-box prefilter + **Haversine**) — no PostGIS at this scale.
 - **Photos** (if used) live in Supabase Storage with EXIF stripped; a `photo_url` column can be added to `pins` when that lands.
 
 ## Related

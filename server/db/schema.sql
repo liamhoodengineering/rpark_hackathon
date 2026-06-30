@@ -1,14 +1,11 @@
--- PinPoint database schema (Supabase / Postgres + PostGIS)
+-- PinPoint database schema (Supabase / Postgres)
 -- Run this in the Supabase SQL editor (or via migration) once per project.
 -- Canonical source: IMPLEMENTATION_SPEC.md §"Data Model".
-
-create extension if not exists postgis;
 
 -- Accounts. Anonymous reporters have NO row here.
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,
-  phone text,                            -- optional
   password_hash text not null,           -- bcrypt
   display_name text not null,
   upvotes_received integer not null default 0,    -- credibility inputs
@@ -20,7 +17,8 @@ create table if not exists users (
 create table if not exists pins (
   id uuid primary key default gen_random_uuid(),
   reporter_id uuid references users(id),  -- NULL = anonymous report
-  geom geography(Point, 4326) not null,   -- lng/lat
+  lat double precision not null,
+  lng double precision not null,
   name text,
   description text,
   severity text not null check (severity in ('Low','Medium','High')),
@@ -31,7 +29,6 @@ create table if not exists pins (
   expires_at timestamptz,                 -- anonymous: created_at + 1h; account: NULL
   created_at timestamptz default now()
 );
-create index if not exists pins_geom_idx on pins using gist (geom);
 
 -- One vote per ACCOUNT per pin. Anonymous users cannot vote.
 create table if not exists votes (

@@ -13,7 +13,7 @@
 ## Project at a glance
 
 - **App:** PinPoint — live crowd-sourced pedestrian hazard map.
-- **Stack:** React + Leaflet (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · SMTP email (Nodemailer).
+- **Stack:** React + Leaflet (client) · Node + Express + TypeScript (server) · Supabase (Postgres/Storage) · JWT auth · SMTP email (Nodemailer).
 - **Spec:** see [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) and [docs/pinpoint_spec.md](docs/pinpoint_spec.md).
 - **Layout:** `server/` (API) · `client/` (SPA) · `docs/` (specs).
 
@@ -33,6 +33,19 @@
 ---
 
 ## Changelog
+
+### 2026-06-30 — Dropped PostGIS; pins use plain lat/lng
+
+- Removed PostGIS. `pins` now stores `lat double precision` + `lng double precision` instead of `geom geography(Point,4326)`; dropped the `create extension postgis` and the GiST index.
+- Proximity ("pins near me" + vote gate) becomes an app-side **bounding-box prefilter + Haversine** in the (still-stubbed) pins/votes routes — no `ST_DWithin`.
+- The `Pin` TypeScript types already used `lat`/`lng`, so no code changes were needed; updated [server/db/schema.sql](../server/db/schema.sql) and the docs.
+- **Live DB migration** (run in Supabase SQL editor — empty table, safe):
+  ```sql
+  alter table pins drop column if exists geom;
+  alter table pins add column if not exists lat double precision not null;
+  alter table pins add column if not exists lng double precision not null;
+  drop extension if exists postgis cascade;  -- also removes spatial_ref_sys
+  ```
 
 ### 2026-06-30 — Email provider: Resend → SMTP (Nodemailer)
 
