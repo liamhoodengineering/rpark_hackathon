@@ -101,6 +101,10 @@ body {
 .btn-downvote:hover:not(:disabled) {
   background: #ea580c;
 }
+.btn-upvote.active,
+.btn-downvote.active {
+  opacity: 0.45;
+}
 .btn-sm {
   padding: 0.3rem 0.6rem;
   font-size: 0.8rem;

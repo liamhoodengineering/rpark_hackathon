@@ -130,4 +130,41 @@ router.post(
   },
 );
 
+router.delete(
+  '/:id/vote',
+  voteLimiter,
+  verifyJwt,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const pinId = pinIdSchema.parse(req.params.id);
+      const userId = req.auth?.sub;
+
+      if (!userId) {
+        throw new HttpError(401, 'Authentication required');
+      }
+
+      const pin = await PinService.getById(pinId);
+      if (!pin) {
+        throw new HttpError(404, 'Pin not found');
+      }
+
+      const existingVote = await VoteService.getUserVote(pinId, userId);
+      if (existingVote) {
+        await VoteService.deleteVote(existingVote.id);
+      }
+
+      const tally = await VoteService.getTally(pinId);
+      const status = await VoteService.syncPinVoteState(pinId, tally);
+
+      if (pin.reporter_id) {
+        await VoteService.syncReporterCredibility(pin.reporter_id);
+      }
+
+      res.json({ message: 'Vote removed', tally, status });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 export default router;
