@@ -66,6 +66,9 @@ const SEVERITY_COLOR: Record<Severity, string> = {
 };
 const PIN_RADIUS_PANE = 'pin-radius-pane';
 const ROUTE_HAZARD_RADIUS_MULTIPLIER = 1.35;
+const OFF_ROUTE_THRESHOLD_M = 70;
+const MIN_MOVE_FOR_REROUTE_M = 45;
+const REROUTE_COOLDOWN_MS = 12_000;
 
 /** Draggable report marker — a divIcon avoids Leaflet's missing-image asset issue. */
 const reportIcon = L.divIcon({
@@ -127,6 +130,8 @@ export default function Map({
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [showRouteHazards, setShowRouteHazards] = useState(false);
   const [routeError, setRouteError] = useState('');
+  const lastRerouteAtRef = useRef(0);
+  const lastReroutePositionRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // ── Draggable nav panel ──
   const navPanelRef = useRef<HTMLDivElement>(null);
@@ -157,7 +162,6 @@ export default function Map({
     const panel = navPanelRef.current;
     if (!drag || !panel) return;
     const width = panel.offsetWidth;
-    const height = panel.offsetHeight;
     const margin = 40; // keep at least this much of the panel on screen
     const nextX = drag.originX + (e.clientX - drag.startX);
     const nextY = drag.originY + (e.clientY - drag.startY);
@@ -539,6 +543,13 @@ export default function Map({
       setActiveDestination(destination);
       setDestinationLabel(destination.label);
       setSearchResults([]);
+      lastRerouteAtRef.current = Date.now();
+      if (userPosition) {
+        lastReroutePositionRef.current = {
+          lat: userPosition.lat,
+          lng: userPosition.lng,
+        };
+      }
     } catch (error) {
       clearNavigation();
       setRouteError(error instanceof Error ? error.message : 'Failed to start navigation');
@@ -565,6 +576,43 @@ export default function Map({
     // Re-route when mode changes so duration/distance reflect drive/walk/bike.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeMode, forceAvoidPinAreas]);
+
+  useEffect(() => {
+    if (!activeDestination || !userPosition || !selectedRoute || reportMode || navigating) {
+      return;
+    }
+
+    const distanceFromRouteM = distanceFromPointToRouteMeters(
+      userPosition.lat,
+      userPosition.lng,
+      selectedRoute.path,
+    );
+    if (distanceFromRouteM <= OFF_ROUTE_THRESHOLD_M) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastRerouteAtRef.current < REROUTE_COOLDOWN_MS) {
+      return;
+    }
+
+    const lastPosition = lastReroutePositionRef.current;
+    if (lastPosition) {
+      const movedMeters = haversineMeters(
+        lastPosition.lat,
+        lastPosition.lng,
+        userPosition.lat,
+        userPosition.lng,
+      );
+      if (movedMeters < MIN_MOVE_FOR_REROUTE_M) {
+        return;
+      }
+    }
+
+    void navigateToDestination(activeDestination);
+    // Reroute only when user meaningfully leaves the current route geometry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDestination, userPosition, selectedRoute, reportMode, navigating]);
 
   async function searchDestinations() {
     if (!destinationQuery.trim()) {
@@ -1556,6 +1604,42 @@ function routeIntersectsPinArea(
   }
 
   return false;
+}
+
+function distanceFromPointToRouteMeters(
+  pointLat: number,
+  pointLng: number,
+  route: Array<[number, number]>,
+): number {
+  if (route.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  if (route.length === 1) {
+    const [lat, lng] = route[0];
+    return haversineMeters(pointLat, pointLng, lat, lng);
+  }
+
+  let minDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = 1; index < route.length; index += 1) {
+    const [startLat, startLng] = route[index - 1];
+    const [endLat, endLng] = route[index];
+    const segmentDistance = pointToSegmentMeters(
+      pointLat,
+      pointLng,
+      startLat,
+      startLng,
+      endLat,
+      endLng,
+    );
+
+    if (segmentDistance < minDistance) {
+      minDistance = segmentDistance;
+    }
+  }
+
+  return minDistance;
 }
 
 function pointToSegmentMeters(
