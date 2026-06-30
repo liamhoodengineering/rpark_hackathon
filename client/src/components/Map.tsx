@@ -19,6 +19,8 @@ import type { Pin, Severity } from '../types/domain.js';
 interface MapViewProps {
   /** Called when a pin marker is clicked (or cleared). Parent renders the VoteCard. */
   onPinSelect: (pin: Pin | null) => void;
+  /** Pin id whose radius should be visible on the map. */
+  selectedPinId?: string | null;
   /** Live GPS position, used to center the map once and draw a "you" marker. */
   userPosition: { lat: number; lng: number } | null;
   /** Bump to force a pins re-fetch (e.g. after a vote or delete elsewhere). */
@@ -35,6 +37,7 @@ const SEVERITY_COLOR: Record<Severity, string> = {
   Medium: '#f97316',
   High: '#ef4444',
 };
+const PIN_RADIUS_PANE = 'pin-radius-pane';
 
 /** Draggable report marker — a divIcon avoids Leaflet's missing-image asset issue. */
 const reportIcon = L.divIcon({
@@ -46,6 +49,7 @@ const reportIcon = L.divIcon({
 
 export default function Map({
   onPinSelect,
+  selectedPinId = null,
   userPosition,
   refreshKey = 0,
   center = [40.0925, -88.2364],
@@ -104,9 +108,13 @@ export default function Map({
       },
     ).addTo(map);
 
+    const radiusPane = map.createPane(PIN_RADIUS_PANE);
+    radiusPane.style.zIndex = '350';
+
     pinsLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
+    map.on('click', () => onPinSelectRef.current(null));
     map.on('moveend', () => fetchPinsRef.current());
     fetchPinsRef.current(); // initial load
 
@@ -152,7 +160,7 @@ export default function Map({
     }
   }, [userPosition, zoom]);
 
-  // ── Render pins (markers + radius circles) ──
+  // ── Render pins (markers + selected radius circle) ──
   useEffect(() => {
     const layer = pinsLayerRef.current;
     if (!layer) return;
@@ -161,13 +169,17 @@ export default function Map({
     for (const pin of pins) {
       const color = SEVERITY_COLOR[pin.severity];
 
-      L.circle([pin.lat, pin.lng], {
-        radius: pin.radius_m,
-        color,
-        weight: 1,
-        fillColor: color,
-        fillOpacity: 0.1,
-      }).addTo(layer);
+      if (pin.id === selectedPinId) {
+        L.circle([pin.lat, pin.lng], {
+          pane: PIN_RADIUS_PANE,
+          radius: pin.radius_m,
+          color,
+          weight: 1,
+          fillColor: color,
+          fillOpacity: 0.1,
+          interactive: false,
+        }).addTo(layer);
+      }
 
       const marker = L.circleMarker([pin.lat, pin.lng], {
         radius: 8,
@@ -180,9 +192,12 @@ export default function Map({
       marker.bindTooltip(
         `<strong>${pin.severity}</strong>${pin.name ? ` · ${escapeHtml(pin.name)}` : ''}`,
       );
-      marker.on('click', () => onPinSelectRef.current(pin));
+      marker.on('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        onPinSelectRef.current(pin);
+      });
     }
-  }, [pins]);
+  }, [pins, selectedPinId]);
 
   // ── Toggle the draggable report marker + preview circle ──
   useEffect(() => {
@@ -208,12 +223,14 @@ export default function Map({
       }
       if (!reportCircleRef.current) {
         reportCircleRef.current = L.circle([reportLatLng.lat, reportLatLng.lng], {
+          pane: PIN_RADIUS_PANE,
           radius: reportRadius,
           color: SEVERITY_COLOR[reportSeverity],
           weight: 2,
           dashArray: '6 6',
           fillColor: SEVERITY_COLOR[reportSeverity],
           fillOpacity: 0.12,
+          interactive: false,
         }).addTo(map);
       }
     } else {
