@@ -40,7 +40,7 @@ interface DestinationSearchResult {
 
 type RouteMode = 'drive' | 'walk' | 'bike';
 type SeverityFilter = 'high_and_lower' | 'medium_and_lower' | 'low';
-type TimeFilter = 'all' | '1h' | '6h' | '24h' | '7d';
+type TimeFilter = 'all' | '5m' | '10m' | '30m' | '1h' | '2h' | '6h' | '12h';
 
 interface RouteResult {
   distance: number;
@@ -122,7 +122,8 @@ export default function Map({
 
   const [destinationQuery, setDestinationQuery] = useState('');
   const [routeMode, setRouteMode] = useState<RouteMode>('drive');
-  const [forceAvoidPinAreas, setForceAvoidPinAreas] = useState(false);
+  const [routeSafety, setRouteSafety] = useState<'fast' | 'safe'>('fast');
+  const forceAvoidPinAreas = routeSafety === 'safe';
   const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>(
     [],
   );
@@ -139,51 +140,6 @@ export default function Map({
   const lastReroutePositionRef = useRef<{ lat: number; lng: number } | null>(
     null,
   );
-
-  // ── Draggable nav panel ──
-  const navPanelRef = useRef<HTMLDivElement>(null);
-  const [navPos, setNavPos] = useState<{ x: number; y: number } | null>(null);
-  const navDragRef = useRef<{
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
-
-  function handleNavLabelPointerDown(e: React.PointerEvent<HTMLLabelElement>) {
-    const panel = navPanelRef.current;
-    if (!panel) return;
-    const rect = panel.getBoundingClientRect();
-    navDragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      originX: rect.left,
-      originY: rect.top,
-    };
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  }
-
-  function handleNavLabelPointerMove(e: React.PointerEvent<HTMLLabelElement>) {
-    const drag = navDragRef.current;
-    const panel = navPanelRef.current;
-    if (!drag || !panel) return;
-    const width = panel.offsetWidth;
-    const margin = 40; // keep at least this much of the panel on screen
-    const nextX = drag.originX + (e.clientX - drag.startX);
-    const nextY = drag.originY + (e.clientY - drag.startY);
-    setNavPos({
-      x: Math.min(Math.max(nextX, margin - width), window.innerWidth - margin),
-      y: Math.min(Math.max(nextY, 0), window.innerHeight - margin),
-    });
-  }
-
-  function handleNavLabelPointerUp(e: React.PointerEvent<HTMLLabelElement>) {
-    navDragRef.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-  }
 
   const selectedRoute =
     routeOptions.find((route) => route.id === selectedRouteId) ??
@@ -336,9 +292,10 @@ export default function Map({
         fillOpacity: 1,
       }).addTo(layer);
 
-      marker.bindTooltip(
-        `<strong>${pin.severity}</strong>${pin.name ? ` · ${escapeHtml(pin.name)}` : ''}`,
-      );
+      marker.bindTooltip(escapeHtml(pin.name?.trim() || 'Hazard'), {
+        direction: 'top',
+        offset: [0, -8],
+      });
       marker.on('click', (event) => {
         L.DomEvent.stopPropagation(event);
         onPinSelectRef.current(pin);
@@ -781,361 +738,357 @@ export default function Map({
   }
 
   return (
-    <div className='map-view'>
-      <div ref={containerRef} className='map' />
-
-      <button
-        className='locate-fab'
-        onClick={recenterOnUser}
-        disabled={!userPosition}
-        title={userPosition ? 'Center on my location' : 'Locating…'}
-        aria-label='Center on my location'
-      >
-        <svg
-          width='22'
-          height='22'
-          viewBox='0 0 24 24'
-          fill='none'
-          stroke='currentColor'
-          strokeWidth={2}
-          strokeLinecap='round'
-        >
-          <circle cx='12' cy='12' r='3.5' fill='currentColor' stroke='none' />
-          <circle cx='12' cy='12' r='7' />
-          <line x1='12' y1='1.5' x2='12' y2='4' />
-          <line x1='12' y1='20' x2='12' y2='22.5' />
-          <line x1='1.5' y1='12' x2='4' y2='12' />
-          <line x1='20' y1='12' x2='22.5' y2='12' />
-        </svg>
-      </button>
-
-      {!reportMode && (
-        <div
-          className='nav-panel'
-          ref={navPanelRef}
-          style={
-            navPos
-              ? { left: navPos.x, top: navPos.y, right: 'auto' }
-              : undefined
-          }
-        >
-          <label
-            className='nav-label'
-            htmlFor='destination-input'
-            onPointerDown={handleNavLabelPointerDown}
-            onPointerMove={handleNavLabelPointerMove}
-            onPointerUp={handleNavLabelPointerUp}
-            onPointerCancel={handleNavLabelPointerUp}
-          >
-            <span className='nav-label-grip' aria-hidden='true'>
-              ⠿
-            </span>
-            Navigate to
-          </label>
-          <div className='nav-row'>
-            <input
-              id='destination-input'
-              className='nav-input'
-              type='text'
-              placeholder='Search destination, e.g. Walmart'
-              value={destinationQuery}
-              onChange={(e) => setDestinationQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  void searchDestinations();
+    <div className='map-window'>
+      <div className='map-window-bar'>
+        {!reportMode && (
+          <div className='map-window-toolbar'>
+            <div className='nav-row'>
+              <input
+                id='destination-input'
+                className='nav-input'
+                type='text'
+                placeholder='Search destination, e.g. Walmart'
+                value={destinationQuery}
+                onChange={(e) => setDestinationQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void searchDestinations();
+                  }
+                }}
+              />
+              <select
+                className='nav-mode-select'
+                value={routeMode}
+                onChange={(e) => setRouteMode(e.target.value as RouteMode)}
+                aria-label='Navigation mode'
+              >
+                <option value='drive'>Drive</option>
+                <option value='walk'>Walk</option>
+                <option value='bike'>Bike</option>
+              </select>
+              <select
+                className='nav-mode-select'
+                value={routeSafety}
+                onChange={(e) =>
+                  setRouteSafety(e.target.value as 'fast' | 'safe')
                 }
-              }}
-            />
-            <select
-              className='nav-mode-select'
-              value={routeMode}
-              onChange={(e) => setRouteMode(e.target.value as RouteMode)}
-              aria-label='Navigation mode'
-            >
-              <option value='drive'>Drive</option>
-              <option value='walk'>Walk</option>
-              <option value='bike'>Bike</option>
-            </select>
-            <button
-              className='btn btn-primary'
-              onClick={() => void searchDestinations()}
-              disabled={searchingDestinations || navigating}
-            >
-              {searchingDestinations ? 'Searching…' : 'Search'}
-            </button>
-            <button
-              className='btn btn-ghost'
-              onClick={clearNavigation}
-              disabled={navigating && routeOptions.length === 0}
-            >
-              Clear
-            </button>
-          </div>
-          <div className='map-filter-row'>
-            <label className='map-filter-label' htmlFor='map-filter-severity'>
-              Severity
-            </label>
-            <select
-              id='map-filter-severity'
-              className='map-filter-select'
-              value={severityFilter}
-              onChange={(e) =>
-                setSeverityFilter(e.target.value as SeverityFilter)
-              }
-            >
-              <option value='all'>All</option>
-              <option value='Low'>Low</option>
-              <option value='Medium'>Medium</option>
-              <option value='High'>High</option>
-            </select>
-
-            <label className='map-filter-label' htmlFor='map-filter-time'>
-              Time
-            </label>
-            <select
-              id='map-filter-time'
-              className='map-filter-select'
-              value={timeFilter}
-              onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
-            >
-              <option value='all'>All time</option>
-              <option value='1h'>Last 1h</option>
-              <option value='6h'>Last 6h</option>
-              <option value='24h'>Last 24h</option>
-              <option value='7d'>Last 7d</option>
-            </select>
-
+                aria-label='Route safety'
+              >
+                <option value='fast'>Fast</option>
+                <option value='safe'>Safe</option>
+              </select>
+              <button
+                className='btn btn-primary'
+                onClick={() => void searchDestinations()}
+                disabled={searchingDestinations || navigating}
+              >
+                {searchingDestinations ? 'Searching…' : 'Go'}
+              </button>
+              <button
+                className='btn btn-ghost'
+                onClick={clearNavigation}
+                disabled={navigating && routeOptions.length === 0}
+              >
+                Clear
+              </button>
+            </div>
+            <div className='map-filter-group'>
+              <label className='map-filter-label' htmlFor='map-filter-severity'>
+                Severity
+              </label>
+              <select
+                id='map-filter-severity'
+                className='map-filter-select'
+                value={severityFilter}
+                onChange={(e) =>
+                  setSeverityFilter(e.target.value as SeverityFilter)
+                }
+              >
+                <option value='high_and_lower'>All</option>
+                <option value='medium_and_lower'>Medium &amp; Low</option>
+                <option value='low'>Low only</option>
+              </select>
+              <label className='map-filter-label' htmlFor='map-filter-time'>
+                Time
+              </label>
+              <select
+                id='map-filter-time'
+                className='map-filter-select'
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
+              >
+                <option value='all'>All time</option>
+                <option value='5m'>Last 5m</option>
+                <option value='10m'>Last 10m</option>
+                <option value='30m'>Last 30m</option>
+                <option value='1h'>Last 1h</option>
+                <option value='2h'>Last 2h</option>
+                <option value='6h'>Last 6h</option>
+                <option value='12h'>Last 12h</option>
+              </select>
+            </div>
             <span className='map-filter-count'>
               <span className='live-dot' aria-hidden='true' />
               {filteredPins.length} live
             </span>
           </div>
-          <label className='map-check-row' htmlFor='force-avoid-pin-areas'>
-            <input
-              id='force-avoid-pin-areas'
-              type='checkbox'
-              checked={forceAvoidPinAreas}
-              onChange={(e) => setForceAvoidPinAreas(e.target.checked)}
-            />
-            <span>
-              Force avoid PinPoint areas (exit first if start is inside)
-            </span>
-          </label>
-          {searchResults.length > 0 && (
-            <ul className='nav-results'>
-              {searchResults.map((result, index) => (
-                <li
-                  key={`${result.label}-${index}`}
-                  className='nav-result-item'
-                >
-                  <button
-                    className='nav-result-main'
-                    onClick={() => {
-                      setDestinationQuery(result.label);
-                      void navigateToDestination(result);
-                    }}
-                    disabled={navigating}
-                  >
-                    {result.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {destinationLabel && (
-            <p className='nav-destination'>To: {destinationLabel}</p>
-          )}
-          {routeOptions.length > 0 && (
-            <div className='route-options'>
-              {routeOptions.map((route) => {
-                const isSelected = route.id === selectedRoute?.id;
-                return (
-                  <button
-                    key={route.id}
-                    type='button'
-                    className={`route-option${isSelected ? ' route-option-selected' : ''}`}
-                    onClick={() => setSelectedRouteId(route.id)}
-                  >
-                    <span className='route-option-title'>
-                      {route.routeLabel}
-                    </span>
-                    <span className='route-option-meta'>
-                      {formatDistance(route.distanceM)} •{' '}
-                      {formatDuration(route.durationS)} • {route.hazards.length}{' '}
-                      hazard{route.hazards.length === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                );
-              })}
+        )}
+      </div>
+
+      <div className='map-window-body'>
+        <div ref={containerRef} className='map' />
+
+        <button
+          className='locate-fab'
+          onClick={recenterOnUser}
+          disabled={!userPosition}
+          title={userPosition ? 'Center on my location' : 'Locating…'}
+          aria-label='Center on my location'
+        >
+          <svg
+            width='22'
+            height='22'
+            viewBox='0 0 24 24'
+            fill='none'
+            stroke='currentColor'
+            strokeWidth={2}
+            strokeLinecap='round'
+          >
+            <circle cx='12' cy='12' r='3.5' fill='currentColor' stroke='none' />
+            <circle cx='12' cy='12' r='7' />
+            <line x1='12' y1='1.5' x2='12' y2='4' />
+            <line x1='12' y1='20' x2='12' y2='22.5' />
+            <line x1='1.5' y1='12' x2='4' y2='12' />
+            <line x1='20' y1='12' x2='22.5' y2='12' />
+          </svg>
+        </button>
+
+        {!reportMode &&
+          (searchResults.length > 0 ||
+            destinationLabel ||
+            routeOptions.length > 0) && (
+            <div className='nav-extras'>
+              {searchResults.length > 0 && (
+                <ul className='nav-results'>
+                  {searchResults.map((result, index) => (
+                    <li
+                      key={`${result.label}-${index}`}
+                      className='nav-result-item'
+                    >
+                      <button
+                        className='nav-result-main'
+                        onClick={() => {
+                          setDestinationQuery(result.label);
+                          void navigateToDestination(result);
+                        }}
+                        disabled={navigating}
+                      >
+                        {result.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {destinationLabel && (
+                <p className='nav-destination'>To: {destinationLabel}</p>
+              )}
+              {routeOptions.length > 0 && (
+                <div className='route-options'>
+                  {routeOptions.map((route) => {
+                    const isSelected = route.id === selectedRoute?.id;
+                    return (
+                      <button
+                        key={route.id}
+                        type='button'
+                        className={`route-option${isSelected ? ' route-option-selected' : ''}`}
+                        onClick={() => setSelectedRouteId(route.id)}
+                      >
+                        <span className='route-option-title'>
+                          {route.routeLabel}
+                        </span>
+                        <span className='route-option-meta'>
+                          {formatDistance(route.distanceM)} •{' '}
+                          {formatDuration(route.durationS)} •{' '}
+                          {route.hazards.length} hazard
+                          {route.hazards.length === 1 ? '' : 's'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {selectedRoute && !reportMode && (
-        <div className='route-chip' role='status' aria-live='polite'>
-          Route ({routeMode}): {formatDistance(selectedRoute.distanceM)} •{' '}
-          {formatDuration(selectedRoute.durationS)}
-          {selectedRoute.hazards.length > 0
-            ? ` • ⚠ ${selectedRoute.hazards.length} hazard area(s) ahead`
-            : ' • No hazard areas on route'}
-        </div>
-      )}
-
-      {!reportMode && selectedRoute && selectedRoute.hazards.length > 0 && (
-        <button
-          type='button'
-          className='route-chip route-chip-warning route-chip-button'
-          onClick={() => setShowRouteHazards((current) => !current)}
-          aria-expanded={showRouteHazards}
-        >
-          Warning: route passes through {selectedRoute.hazards.length} hazard
-          area(s). Highest severity: {highestSeverity(selectedRoute.hazards)}.{' '}
-          {showRouteHazards ? 'Hide hazards' : 'View hazards'}
-        </button>
-      )}
-
-      {!reportMode &&
-        selectedRoute &&
-        showRouteHazards &&
-        selectedRoute.hazards.length > 0 && (
-          <div className='route-hazards-panel' role='status' aria-live='polite'>
-            <p className='route-hazards-title'>Hazards on selected route</p>
-            <ul className='route-hazards-list'>
-              {selectedRoute.hazards.map((hazard) => (
-                <li key={hazard.id}>
-                  <button
-                    type='button'
-                    className='route-hazard-item'
-                    onClick={() => focusHazardOnMap(hazard)}
-                  >
-                    <span>
-                      {hazard.name?.trim() || 'Unnamed hazard'}
-                      {' • '}
-                      {hazard.severity}
-                    </span>
-                    <span>
-                      {Math.round(
-                        hazard.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER,
-                      )}
-                      m zone
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+        {selectedRoute && !reportMode && (
+          <div className='route-chip' role='status' aria-live='polite'>
+            Route ({routeMode}): {formatDistance(selectedRoute.distanceM)} •{' '}
+            {formatDuration(selectedRoute.durationS)}
+            {selectedRoute.hazards.length > 0
+              ? ` • ⚠ ${selectedRoute.hazards.length} hazard area(s) ahead`
+              : ' • No hazard areas on route'}
           </div>
         )}
 
-      {routeError && !reportMode && (
-        <div
-          className='route-chip route-chip-error'
-          role='status'
-          aria-live='polite'
-        >
-          {routeError}
-        </div>
-      )}
+        {!reportMode && selectedRoute && selectedRoute.hazards.length > 0 && (
+          <button
+            type='button'
+            className='route-chip route-chip-warning route-chip-button'
+            onClick={() => setShowRouteHazards((current) => !current)}
+            aria-expanded={showRouteHazards}
+          >
+            Warning: route passes through {selectedRoute.hazards.length} hazard
+            area(s). Highest severity: {highestSeverity(selectedRoute.hazards)}.{' '}
+            {showRouteHazards ? 'Hide hazards' : 'View hazards'}
+          </button>
+        )}
 
-      {!reportMode && (
-        <button className='btn btn-primary report-fab' onClick={startReport}>
-          📍 Report hazard
-        </button>
-      )}
-
-      {reportMode && (
-        <div className='report-panel'>
-          <h3 className='report-title'>Report a hazard</h3>
-          <p className='report-hint'>Drag the 📍 marker to the exact spot.</p>
-
-          <label className='report-field'>
-            Radius: {reportRadius}m
-            <input
-              type='range'
-              min={10}
-              max={500}
-              step={10}
-              value={reportRadius}
-              onChange={(e) => setReportRadius(Number(e.target.value))}
-            />
-          </label>
-
-          <label className='report-field'>
-            Severity
-            <select
-              value={reportSeverity}
-              onChange={(e) => setReportSeverity(e.target.value as Severity)}
+        {!reportMode &&
+          selectedRoute &&
+          showRouteHazards &&
+          selectedRoute.hazards.length > 0 && (
+            <div
+              className='route-hazards-panel'
+              role='status'
+              aria-live='polite'
             >
-              {SEVERITIES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className='report-field'>
-            Expires in: {reportExpiresHours}h
-            <input
-              type='range'
-              min={1}
-              max={24}
-              step={1}
-              value={reportExpiresHours}
-              onChange={(e) => setReportExpiresHours(Number(e.target.value))}
-            />
-          </label>
-
-          <label className='report-field'>
-            Name (optional)
-            <input
-              type='text'
-              value={reportName}
-              maxLength={80}
-              placeholder='e.g. Broken glass'
-              onChange={(e) => setReportName(e.target.value)}
-            />
-          </label>
-
-          <label className='report-field'>
-            Description (optional)
-            <textarea
-              value={reportDescription}
-              maxLength={280}
-              rows={2}
-              placeholder="What's the hazard?"
-              onChange={(e) => setReportDescription(e.target.value)}
-            />
-          </label>
-
-          {reportError && <p className='error-msg'>{reportError}</p>}
-
-          {!user && (
-            <p className='report-anon-hint'>
-              Reporting anonymously — this pin expires in 1 hour. Sign in for
-              persistent pins and voting.
-            </p>
+              <p className='route-hazards-title'>Hazards on selected route</p>
+              <ul className='route-hazards-list'>
+                {selectedRoute.hazards.map((hazard) => (
+                  <li key={hazard.id}>
+                    <button
+                      type='button'
+                      className='route-hazard-item'
+                      onClick={() => focusHazardOnMap(hazard)}
+                    >
+                      <span>
+                        {hazard.name?.trim() || 'Unnamed hazard'}
+                        {' • '}
+                        {hazard.severity}
+                      </span>
+                      <span>
+                        {Math.round(
+                          hazard.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER,
+                        )}
+                        m zone
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
-          <div className='report-actions'>
-            <button
-              className='btn btn-primary'
-              onClick={submitReport}
-              disabled={submitting}
-            >
-              {submitting ? 'Dropping…' : 'Drop pin'}
-            </button>
-            <button
-              className='btn btn-ghost'
-              onClick={cancelReport}
-              disabled={submitting}
-            >
-              Cancel
-            </button>
+        {routeError && !reportMode && (
+          <div
+            className='route-chip route-chip-error'
+            role='status'
+            aria-live='polite'
+          >
+            {routeError}
           </div>
-        </div>
-      )}
+        )}
+
+        {!reportMode && (
+          <button className='btn btn-primary report-fab' onClick={startReport}>
+            📍 Report hazard
+          </button>
+        )}
+
+        {reportMode && (
+          <div className='report-panel'>
+            <h3 className='report-title'>Report a hazard</h3>
+            <p className='report-hint'>Drag the 📍 marker to the exact spot.</p>
+
+            <label className='report-field'>
+              Radius: {reportRadius}m
+              <input
+                type='range'
+                min={10}
+                max={500}
+                step={10}
+                value={reportRadius}
+                onChange={(e) => setReportRadius(Number(e.target.value))}
+              />
+            </label>
+
+            <label className='report-field'>
+              Severity
+              <select
+                value={reportSeverity}
+                onChange={(e) => setReportSeverity(e.target.value as Severity)}
+              >
+                {SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className='report-field'>
+              Expires in: {reportExpiresHours}h
+              <input
+                type='range'
+                min={1}
+                max={24}
+                step={1}
+                value={reportExpiresHours}
+                onChange={(e) => setReportExpiresHours(Number(e.target.value))}
+              />
+            </label>
+
+            <label className='report-field'>
+              Name (optional)
+              <input
+                type='text'
+                value={reportName}
+                maxLength={80}
+                placeholder='e.g. Broken glass'
+                onChange={(e) => setReportName(e.target.value)}
+              />
+            </label>
+
+            <label className='report-field'>
+              Description (optional)
+              <textarea
+                value={reportDescription}
+                maxLength={280}
+                rows={2}
+                placeholder="What's the hazard?"
+                onChange={(e) => setReportDescription(e.target.value)}
+              />
+            </label>
+
+            {reportError && <p className='error-msg'>{reportError}</p>}
+
+            {!user && (
+              <p className='report-anon-hint'>
+                Reporting anonymously — this pin expires in 1 hour. Sign in for
+                persistent pins and voting.
+              </p>
+            )}
+
+            <div className='report-actions'>
+              <button
+                className='btn btn-primary'
+                onClick={submitReport}
+                disabled={submitting}
+              >
+                {submitting ? 'Dropping…' : 'Drop pin'}
+              </button>
+              <button
+                className='btn btn-ghost'
+                onClick={cancelReport}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1174,10 +1127,14 @@ function highestSeverity(pins: Array<Pick<Pin, 'severity'>>): Severity {
 }
 
 function timeFilterToMs(filter: TimeFilter): number | null {
-  if (filter === '1h') return 60 * 60 * 1000;
-  if (filter === '6h') return 6 * 60 * 60 * 1000;
-  if (filter === '24h') return 24 * 60 * 60 * 1000;
-  if (filter === '7d') return 7 * 24 * 60 * 60 * 1000;
+  const MIN = 60 * 1000;
+  if (filter === '5m') return 5 * MIN;
+  if (filter === '10m') return 10 * MIN;
+  if (filter === '30m') return 30 * MIN;
+  if (filter === '1h') return 60 * MIN;
+  if (filter === '2h') return 120 * MIN;
+  if (filter === '6h') return 360 * MIN;
+  if (filter === '12h') return 720 * MIN;
   return null;
 }
 

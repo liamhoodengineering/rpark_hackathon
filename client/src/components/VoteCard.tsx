@@ -70,7 +70,12 @@ export function VoteCard({
         await votesApi.cancel(pin.id);
         setMyVote(null);
       } else {
-        await votesApi.cast(pin.id, voteType, userPosition.lat, userPosition.lng);
+        await votesApi.cast(
+          pin.id,
+          voteType,
+          userPosition.lat,
+          userPosition.lng,
+        );
         setMyVote(voteType);
       }
       const updated = await votesApi.getTally(pin.id);
@@ -152,33 +157,16 @@ export function VoteCard({
             to vote on hazards.
           </p>
         ) : !userPosition ? (
-          <p className="vote-prompt">Enable location to vote.</p>
+          <p className='vote-prompt'>Enable location to vote.</p>
         ) : !isNearby ? (
-          <p className="vote-prompt">Get closer to vote on this pin.</p>
+          <p className='vote-prompt'>Get closer to vote on this pin.</p>
         ) : !isOwner ? (
-          <>
-            <p className="vote-label">
-              {myVote ? 'Tap your choice again to undo it.' : 'Is this hazard still here?'}
+          myVote ? (
+            <p className='vote-prompt'>
+              You voted “{myVote === 'up' ? 'Still here' : 'Gone now'}.” Tap it
+              again to undo.
             </p>
-            <div className="vote-buttons">
-              <button
-                className={`btn btn-upvote${myVote === 'up' ? ' active' : ''}`}
-                onClick={() => castVote('up')}
-                disabled={voting}
-                aria-pressed={myVote === 'up'}
-              >
-                👍 Still here
-              </button>
-              <button
-                className={`btn btn-downvote${myVote === 'down' ? ' active' : ''}`}
-                onClick={() => castVote('down')}
-                disabled={voting}
-                aria-pressed={myVote === 'down'}
-              >
-                👎 Gone now
-              </button>
-            </div>
-          </>
+          ) : null
         ) : null}
 
         {isOwner && (

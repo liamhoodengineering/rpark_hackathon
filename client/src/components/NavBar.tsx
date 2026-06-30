@@ -16,19 +16,13 @@ export function NavBar() {
   return (
     <nav className='navbar'>
       <Link to='/' className='navbar-brand'>
-        📍 PinPoint
+        <img src='/logo.png' alt='' className='navbar-logo' />
+        PinPoint
       </Link>
       <div className='navbar-links'>
         {user ? (
           <>
-            <Link to='/my-pins' className='nav-link'>
-              My Pins
-            </Link>
-            <Link to='/alerts' className='nav-link'>
-              Alerts
-            </Link>
             <AlertsToggle />
-            <span className='nav-user'>{user.display_name}</span>
             <button onClick={handleLogout} className='btn btn-ghost'>
               Logout
             </button>

@@ -102,8 +102,14 @@ body {
   background: #ea580c;
 }
 .btn-upvote.active,
-.btn-downvote.active {
-  opacity: 0.45;
+.btn-upvote.btn-vote-active {
+  background: #15803d;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+.btn-downvote.active,
+.btn-downvote.btn-vote-active {
+  background: #c2410c;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
 }
 .btn-sm {
   padding: 0.3rem 0.6rem;
@@ -161,22 +167,60 @@ body {
   font-weight: 500;
 }
 
-/* ── Nearby-alerts toggle ── */
+/* ── Email-alerts toggle ── */
 .alerts-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #cbd5e1;
   cursor: pointer;
   user-select: none;
 }
-.alerts-toggle input {
-  accent-color: #3b82f6;
+.alerts-toggle-text {
+  font-weight: 500;
+}
+.switch {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 22px;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
   cursor: pointer;
 }
-.alerts-toggle input:disabled {
+.switch input:disabled {
   cursor: progress;
+}
+.switch-track {
+  flex: 1;
+  border-radius: 999px;
+  background: #334155;
+  transition: background 0.2s ease;
+}
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease;
+}
+.switch-on .switch-track {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+}
+.switch-on .switch-thumb {
+  transform: translateX(18px);
+}
+.switch-busy {
+  opacity: 0.6;
 }
 
 /* ── Auth pages ── */
@@ -402,6 +446,10 @@ body {
   display: flex;
   gap: 0.75rem;
 }
+.vote-buttons .btn {
+  flex: 1;
+  white-space: nowrap;
+}
 .vote-prompt {
   margin: 0;
   font-size: 0.875rem;
@@ -505,13 +553,121 @@ body {
   gap: 0.75rem;
 }
 
-/* ── Map ── */
-.map-view {
+/* ── Map window ── */
+.map-window {
   position: relative;
   flex: 1;
   display: flex;
-  min-height: calc(100vh - 57px);
+  flex-direction: column;
+  margin: 1rem;
+  min-height: calc(100vh - 57px - 2rem);
+  background: var(--pp-surface, #0f172a);
+  border: 1px solid var(--pp-border, #1e293b);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--pp-shadow-lg, 0 24px 60px rgba(0, 0, 0, 0.45));
 }
+
+.map-window-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(15, 23, 42, 0.92);
+  border-bottom: 1px solid var(--pp-border, #1e293b);
+  backdrop-filter: blur(8px);
+}
+
+.map-window-chrome {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.map-window-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.map-window-dot-red {
+  background: #ff5f57;
+}
+.map-window-dot-amber {
+  background: #febc2e;
+}
+.map-window-dot-green {
+  background: #28c840;
+}
+
+.map-window-title {
+  margin-left: 0.35rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #f8fafc;
+}
+
+.map-window-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.map-window-toolbar .nav-row {
+  flex: 0 1 600px;
+  min-width: 400px;
+}
+.map-window-toolbar .map-filter-group {
+  margin-left: auto;
+}
+.map-window-toolbar .map-filter-count {
+  margin-left: 0.6rem;
+}
+
+.map-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.map-check-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #cbd5e1;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.map-check-inline input[type='checkbox'] {
+  accent-color: #3b82f6;
+}
+
+.map-window-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.nav-extras {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  z-index: 1100;
+  width: min(420px, calc(100% - 1.7rem));
+  max-height: calc(100% - 1.7rem);
+  overflow-y: auto;
+  background: rgba(17, 24, 39, 0.96);
+  border: 1px solid var(--pp-border, #1e293b);
+  border-radius: 12px;
+  padding: 0.55rem 0.65rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
 .map {
   position: absolute;
   inset: 0;
@@ -943,6 +1099,12 @@ body {
   align-items: center;
   gap: 0.4rem;
   letter-spacing: -0.01em;
+}
+.navbar-logo {
+  height: 30px;
+  width: 30px;
+  object-fit: contain;
+  display: block;
 }
 .nav-link {
   padding: 0.35rem 0.6rem;

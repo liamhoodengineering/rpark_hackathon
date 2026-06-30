@@ -26,16 +26,21 @@ export function AlertsToggle() {
 
   return (
     <label
-      className='alerts-toggle'
-      title='Share your live location while the app is open to get nearby-hazard alerts'
+      className={`alerts-toggle${busy ? ' switch-busy' : ''}`}
+      title='Get an email when a new hazard is reported near you'
     >
-      <input
-        type='checkbox'
-        checked={enabled}
-        onChange={toggle}
-        disabled={busy}
-      />
-      <span>Nearby alerts</span>
+      <span className='alerts-toggle-text'>Email Alerts</span>
+      <span className={`switch${enabled ? ' switch-on' : ''}`}>
+        <input
+          type='checkbox'
+          checked={enabled}
+          onChange={toggle}
+          disabled={busy}
+        />
+        <span className='switch-track' aria-hidden='true'>
+          <span className='switch-thumb' />
+        </span>
+      </span>
     </label>
   );
 }

@@ -3,12 +3,10 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import MapView from './components/Map.js';
 import { LiveLocationSync } from './components/LiveLocationSync.js';
 import { NavBar } from './components/NavBar.js';
-import { ProtectedRoute } from './components/ProtectedRoute.js';
 import { VoteCard } from './components/VoteCard.js';
 import { AuthProvider } from './contexts/AuthContext.js';
 import { AuthModalProvider } from './contexts/AuthModalContext.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
-import { ManageAlertsPage } from './pages/ManageAlertsPage.js';
 import { UnsubscribePage } from './pages/UnsubscribePage.js';
 import type { Pin } from './types/domain.js';
 
@@ -75,14 +73,6 @@ export default function App() {
             <LiveLocationSync />
             <Routes>
               <Route path='/' element={<MapPage />} />
-              <Route
-                path='/alerts'
-                element={
-                  <ProtectedRoute>
-                    <ManageAlertsPage />
-                  </ProtectedRoute>
-                }
-              />
               <Route path='/unsubscribe' element={<UnsubscribePage />} />
             </Routes>
           </div>

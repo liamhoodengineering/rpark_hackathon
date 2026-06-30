@@ -20,8 +20,7 @@ export function UnsubscribePage() {
         <div className='auth-card'>
           <h2>Manage Alerts</h2>
           <p>
-            No alert area specified.{' '}
-            <Link to='/alerts'>Manage your alert areas →</Link>
+            No alert area specified. <Link to='/'>Back to map →</Link>
           </p>
         </div>
       </div>
@@ -65,8 +64,8 @@ export function UnsubscribePage() {
         <div className='auth-card'>
           <h2>✅ Unsubscribed</h2>
           <p>You've been removed from that alert area.</p>
-          <Link to='/alerts' className='btn btn-primary'>
-            Manage all alert areas
+          <Link to='/' className='btn btn-primary'>
+            Back to map
           </Link>
         </div>
       </div>
@@ -87,7 +86,7 @@ export function UnsubscribePage() {
           >
             {status === 'loading' ? 'Removing…' : 'Yes, remove it'}
           </button>
-          <Link to='/alerts' className='btn btn-ghost'>
+          <Link to='/' className='btn btn-ghost'>
             Cancel
           </Link>
         </div>
