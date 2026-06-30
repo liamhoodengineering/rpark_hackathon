@@ -510,6 +510,20 @@ body {
   color: #cbd5e1;
 }
 
+.map-check-row {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.map-check-row input[type='checkbox'] {
+  accent-color: #3b82f6;
+}
+
 .nav-input {
   flex: 1;
   min-width: 0;

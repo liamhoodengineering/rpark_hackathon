@@ -39,7 +39,7 @@ interface DestinationSearchResult {
 }
 
 type RouteMode = 'drive' | 'walk' | 'bike';
-type SeverityFilter = 'all' | Severity;
+type SeverityFilter = 'high_and_lower' | 'medium_and_lower' | 'low';
 type TimeFilter = 'all' | '1h' | '6h' | '24h' | '7d';
 
 interface RouteResult {
@@ -99,7 +99,7 @@ export default function Map({
 
   const { user } = useAuth();
   const [pins, setPins] = useState<Pin[]>([]);
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('high_and_lower');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   // ── Report flow state ──
@@ -115,6 +115,7 @@ export default function Map({
 
   const [destinationQuery, setDestinationQuery] = useState('');
   const [routeMode, setRouteMode] = useState<RouteMode>('drive');
+  const [forceAvoidPinAreas, setForceAvoidPinAreas] = useState(false);
   const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>([]);
   const [searchingDestinations, setSearchingDestinations] = useState(false);
   const [navigating, setNavigating] = useState(false);
@@ -181,7 +182,7 @@ export default function Map({
     const maxAgeMs = timeFilterToMs(timeFilter);
 
     return pins.filter((pin) => {
-      if (severityFilter !== 'all' && pin.severity !== severityFilter) {
+      if (!matchesSeverityFilter(pin.severity, severityFilter)) {
         return false;
       }
 
@@ -340,11 +341,26 @@ export default function Map({
           coordinates: route.path.map(([lat, lng]) => [lng, lat] as [number, number]),
         })),
         filteredPins,
+        { forceAvoidPinAreas },
       );
 
       return rescoredRoutes;
     });
-  }, [filteredPins]);
+  }, [filteredPins, forceAvoidPinAreas]);
+
+  useEffect(() => {
+    if (routeOptions.length === 0) {
+      return;
+    }
+
+    setSelectedRouteId((currentId) => {
+      if (currentId && routeOptions.some((route) => route.id === currentId)) {
+        return currentId;
+      }
+
+      return routeOptions[0].id;
+    });
+  }, [routeOptions]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -505,8 +521,12 @@ export default function Map({
     setRouteError('');
 
     try {
-      const routes = await fetchRoutesForMode(routeMode, userPosition, destination);
-      const rankedRoutes = rankRouteOptions(routes, filteredPins);
+      const routes = forceAvoidPinAreas
+        ? await fetchRoutesWithAvoidance(routeMode, userPosition, destination, filteredPins)
+        : await fetchRoutesForMode(routeMode, userPosition, destination);
+      const rankedRoutes = rankRouteOptions(routes, filteredPins, {
+        forceAvoidPinAreas,
+      });
 
       if (rankedRoutes.length === 0) {
         throw new Error('No route found for this destination.');
@@ -544,7 +564,7 @@ export default function Map({
     void navigateToDestination(activeDestination);
     // Re-route when mode changes so duration/distance reflect drive/walk/bike.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeMode]);
+  }, [routeMode, forceAvoidPinAreas]);
 
   async function searchDestinations() {
     if (!destinationQuery.trim()) {
@@ -753,10 +773,9 @@ export default function Map({
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
             >
-              <option value="all">All</option>
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
+              <option value="high_and_lower">High and lower</option>
+              <option value="medium_and_lower">Medium and lower</option>
+              <option value="low">Low</option>
             </select>
 
             <label className="map-filter-label" htmlFor="map-filter-time">
@@ -777,6 +796,15 @@ export default function Map({
 
             <span className="map-filter-count">{filteredPins.length} shown</span>
           </div>
+          <label className="map-check-row" htmlFor="force-avoid-pin-areas">
+            <input
+              id="force-avoid-pin-areas"
+              type="checkbox"
+              checked={forceAvoidPinAreas}
+              onChange={(e) => setForceAvoidPinAreas(e.target.checked)}
+            />
+            <span>Force avoid PinPoint areas (exit first if start is inside)</span>
+          </label>
           {searchResults.length > 0 && (
             <ul className="nav-results">
               {searchResults.map((result, index) => (
@@ -1015,6 +1043,16 @@ function timeFilterToMs(filter: TimeFilter): number | null {
   return null;
 }
 
+function matchesSeverityFilter(severity: Severity, filter: SeverityFilter): boolean {
+  if (filter === 'high_and_lower') {
+    return true;
+  }
+  if (filter === 'medium_and_lower') {
+    return severity === 'Medium' || severity === 'Low';
+  }
+  return severity === 'Low';
+}
+
 function routeUrlCandidates(
   mode: RouteMode,
   start: { lat: number; lng: number },
@@ -1085,6 +1123,50 @@ async function fetchRoutesForMode(
   throw lastError ?? new Error('Failed to fetch route for this mode.');
 }
 
+async function fetchRoutesWithAvoidance(
+  mode: RouteMode,
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  pins: Pin[],
+): Promise<RouteResult[]> {
+  const baseRoutes = await fetchRoutesForMode(mode, start, destination);
+
+  if (pins.length === 0) {
+    return baseRoutes;
+  }
+
+  const rankedBase = rankRouteOptions(baseRoutes, pins, { forceAvoidPinAreas: true });
+  const primaryRoute = rankedBase[0];
+
+  if (!primaryRoute || primaryRoute.hazards.length === 0) {
+    return baseRoutes;
+  }
+
+  const waypoints = computeAvoidanceWaypoints(start, destination, primaryRoute.path, primaryRoute.hazards);
+  if (waypoints.length === 0) {
+    return baseRoutes;
+  }
+
+  const detourRoutes: RouteResult[] = [];
+
+  for (const waypoint of waypoints.slice(0, 4)) {
+    try {
+      const firstLegRoutes = await fetchRoutesForMode(mode, start, waypoint);
+      const secondLegRoutes = await fetchRoutesForMode(mode, waypoint, destination);
+      const firstLeg = firstLegRoutes[0];
+      const secondLeg = secondLegRoutes[0];
+
+      if (firstLeg && secondLeg) {
+        detourRoutes.push(combineRouteSegments(firstLeg, secondLeg));
+      }
+    } catch {
+      // Keep trying other waypoints if one detour request fails.
+    }
+  }
+
+  return dedupeRoutes([...baseRoutes, ...detourRoutes]);
+}
+
 function dedupeRoutes(routes: RouteResult[]): RouteResult[] {
   const seen = new Set<string>();
 
@@ -1118,10 +1200,195 @@ function routeSignature(coordinates: [number, number][]): string {
   return samples.join('|');
 }
 
-function rankRouteOptions(routes: RouteResult[], pins: Pin[]): RouteOption[] {
+function combineRouteSegments(first: RouteResult, second: RouteResult): RouteResult {
+  const firstCoordinates = [...first.coordinates];
+  const secondCoordinates = [...second.coordinates];
+
+  if (firstCoordinates.length > 0 && secondCoordinates.length > 0) {
+    const [firstLng, firstLat] = secondCoordinates[0];
+    const [lastLng, lastLat] = firstCoordinates[firstCoordinates.length - 1];
+    if (Math.abs(firstLat - lastLat) < 1e-6 && Math.abs(firstLng - lastLng) < 1e-6) {
+      secondCoordinates.shift();
+    }
+  }
+
+  return {
+    distance: first.distance + second.distance,
+    duration: first.duration + second.duration,
+    coordinates: [...firstCoordinates, ...secondCoordinates],
+  };
+}
+
+function computeAvoidanceWaypoints(
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  primaryPath: Array<[number, number]>,
+  hazards: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
+): Array<{ lat: number; lng: number }> {
+  const waypoints: Array<{ lat: number; lng: number }> = [];
+  const startOverlappingHazards = hazards.filter((hazard) => pointInsidePinArea(start.lat, start.lng, hazard));
+
+  for (const hazard of startOverlappingHazards) {
+    waypoints.push(exitPointForHazard(start, destination, hazard));
+  }
+
+  const mainHazard = pickMainHazardOnPath(primaryPath, hazards);
+  if (mainHazard) {
+    const aroundPoints = sideStepWaypoints(mainHazard, start, destination);
+    waypoints.push(...aroundPoints);
+  }
+
+  return dedupeWaypoints(waypoints);
+}
+
+function pickMainHazardOnPath(
+  path: Array<[number, number]>,
+  hazards: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
+): Pick<Pin, 'lat' | 'lng' | 'radius_m'> | null {
+  if (path.length === 0 || hazards.length === 0) {
+    return null;
+  }
+
+  const [startLat, startLng] = path[0];
+  let selected = hazards[0];
+  let minDistance = haversineMeters(startLat, startLng, selected.lat, selected.lng);
+
+  for (const hazard of hazards.slice(1)) {
+    const distance = haversineMeters(startLat, startLng, hazard.lat, hazard.lng);
+    if (distance < minDistance) {
+      minDistance = distance;
+      selected = hazard;
+    }
+  }
+
+  return selected;
+}
+
+function exitPointForHazard(
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  hazard: Pick<Pin, 'lat' | 'lng' | 'radius_m'>,
+): { lat: number; lng: number } {
+  const away = normalizeVector(
+    metersVectorFrom(hazard.lat, hazard.lng, start.lat, start.lng),
+    normalizeVector(metersVectorFrom(hazard.lat, hazard.lng, destination.lat, destination.lng), {
+      east: 1,
+      north: 0,
+    }),
+  );
+
+  return offsetLatLng(hazard.lat, hazard.lng, away, hazard.radius_m + 180);
+}
+
+function sideStepWaypoints(
+  hazard: Pick<Pin, 'lat' | 'lng' | 'radius_m'>,
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+): Array<{ lat: number; lng: number }> {
+  const forward = normalizeVector(metersVectorFrom(start.lat, start.lng, destination.lat, destination.lng), {
+    east: 1,
+    north: 0,
+  });
+
+  const left = { east: -forward.north, north: forward.east };
+  const right = { east: forward.north, north: -forward.east };
+  const detourRadius = hazard.radius_m + 180;
+
+  return [
+    offsetLatLng(hazard.lat, hazard.lng, left, detourRadius),
+    offsetLatLng(hazard.lat, hazard.lng, right, detourRadius),
+  ];
+}
+
+function metersVectorFrom(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+): { east: number; north: number } {
+  const refLatRad = (fromLat * Math.PI) / 180;
+  const metersPerDegLat = 111_132;
+  const metersPerDegLng = 111_320 * Math.cos(refLatRad);
+
+  return {
+    east: (toLng - fromLng) * metersPerDegLng,
+    north: (toLat - fromLat) * metersPerDegLat,
+  };
+}
+
+function normalizeVector(
+  vector: { east: number; north: number },
+  fallback: { east: number; north: number },
+): { east: number; north: number } {
+  const length = Math.hypot(vector.east, vector.north);
+  if (length < 1e-6) {
+    const fallbackLen = Math.hypot(fallback.east, fallback.north);
+    if (fallbackLen < 1e-6) {
+      return { east: 1, north: 0 };
+    }
+    return {
+      east: fallback.east / fallbackLen,
+      north: fallback.north / fallbackLen,
+    };
+  }
+
+  return {
+    east: vector.east / length,
+    north: vector.north / length,
+  };
+}
+
+function offsetLatLng(
+  centerLat: number,
+  centerLng: number,
+  direction: { east: number; north: number },
+  distanceM: number,
+): { lat: number; lng: number } {
+  const latRad = (centerLat * Math.PI) / 180;
+  const metersPerDegLat = 111_132;
+  const metersPerDegLng = Math.max(1, 111_320 * Math.cos(latRad));
+
+  return {
+    lat: centerLat + (direction.north * distanceM) / metersPerDegLat,
+    lng: centerLng + (direction.east * distanceM) / metersPerDegLng,
+  };
+}
+
+function dedupeWaypoints(points: Array<{ lat: number; lng: number }>): Array<{ lat: number; lng: number }> {
+  const seen = new Set<string>();
+  const unique: Array<{ lat: number; lng: number }> = [];
+
+  for (const point of points) {
+    const key = `${point.lat.toFixed(5)}:${point.lng.toFixed(5)}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(point);
+  }
+
+  return unique;
+}
+
+function rankRouteOptions(
+  routes: RouteResult[],
+  pins: Pin[],
+  options: { forceAvoidPinAreas?: boolean } = {},
+): RouteOption[] {
   const scoredRoutes = routes.map((route) => {
     const path = route.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]);
     const hazards = pins.filter((pin) => routeIntersectsPinArea(path, pin));
+
+    const [startLat, startLng] = path[0] ?? [NaN, NaN];
+    const startOverlappingPins = Number.isFinite(startLat) && Number.isFinite(startLng)
+      ? pins.filter((pin) => pointInsidePinArea(startLat, startLng, pin))
+      : [];
+    const startsInsidePinArea = startOverlappingPins.length > 0;
+    const exitDistanceM = startsInsidePinArea
+      ? distanceToExitPinAreas(path, startOverlappingPins)
+      : 0;
+
     const severityPenalty = hazards.reduce(
       (total, pin) => total + hazardPenaltyForSeverity(pin.severity),
       0,
@@ -1136,11 +1403,55 @@ function rankRouteOptions(routes: RouteResult[], pins: Pin[]): RouteOption[] {
       hazards,
       score,
       routeLabel: 'Route',
+      startsInsidePinArea,
+      exitDistanceM,
     };
   });
 
   if (scoredRoutes.length === 0) {
     return [];
+  }
+
+  if (options.forceAvoidPinAreas) {
+    const rankedByAvoidance = [...scoredRoutes].sort((left, right) => {
+      if (left.startsInsidePinArea && right.startsInsidePinArea) {
+        if (left.exitDistanceM !== right.exitDistanceM) {
+          return left.exitDistanceM - right.exitDistanceM;
+        }
+      }
+
+      if (left.hazards.length !== right.hazards.length) {
+        return left.hazards.length - right.hazards.length;
+      }
+
+      if (left.score !== right.score) {
+        return left.score - right.score;
+      }
+
+      return left.durationS - right.durationS;
+    });
+
+    const primaryRoute = rankedByAvoidance[0];
+    const primaryLabel = primaryRoute.startsInsidePinArea
+      ? 'Exit + Avoid'
+      : 'Avoid Pin Areas';
+
+    const preferredRoutes: RouteOption[] = [
+      {
+        ...primaryRoute,
+        routeLabel: primaryLabel,
+      },
+    ];
+
+    const backupRoute = rankedByAvoidance.find((route) => route.id !== primaryRoute.id);
+    if (backupRoute) {
+      preferredRoutes.push({
+        ...backupRoute,
+        routeLabel: 'Backup Avoid',
+      });
+    }
+
+    return preferredRoutes;
   }
 
   const fastestRoute = [...scoredRoutes].sort((left, right) => {
@@ -1174,6 +1485,38 @@ function rankRouteOptions(routes: RouteResult[], pins: Pin[]): RouteOption[] {
   }
 
   return preferredRoutes;
+}
+
+function pointInsidePinArea(
+  lat: number,
+  lng: number,
+  pin: Pick<Pin, 'lat' | 'lng' | 'radius_m'>,
+): boolean {
+  return haversineMeters(lat, lng, pin.lat, pin.lng) <= pin.radius_m;
+}
+
+function distanceToExitPinAreas(
+  path: Array<[number, number]>,
+  startOverlappingPins: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
+): number {
+  if (path.length < 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let traveledMeters = 0;
+
+  for (let index = 1; index < path.length; index += 1) {
+    const [prevLat, prevLng] = path[index - 1];
+    const [lat, lng] = path[index];
+    traveledMeters += haversineMeters(prevLat, prevLng, lat, lng);
+
+    const stillInside = startOverlappingPins.some((pin) => pointInsidePinArea(lat, lng, pin));
+    if (!stillInside) {
+      return traveledMeters;
+    }
+  }
+
+  return Number.POSITIVE_INFINITY;
 }
 
 function hazardPenaltyForSeverity(severity: Severity): number {
