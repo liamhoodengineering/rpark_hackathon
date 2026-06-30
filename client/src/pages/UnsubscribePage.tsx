@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { watchAreasApi } from '../api/watchAreas.js';
+import { pinsApi } from '../api/pins.js';
 import { useAuth } from '../contexts/AuthContext.js';
 
 export function UnsubscribePage() {
@@ -41,7 +41,7 @@ export function UnsubscribePage() {
   async function handleUnsubscribe() {
     setStatus('loading');
     try {
-      await watchAreasApi.delete(areaId!);
+      await pinsApi.delete(areaId!);
       setStatus('done');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to remove alert area');

@@ -184,8 +184,8 @@ body {
 .watch-area-info { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 0.875rem; color: #94a3b8; }
 .watch-area-radius, .watch-area-severity, .watch-area-email, .watch-area-coords { white-space: nowrap; }
 
-/* ── WatchAreaForm ── */
-.watch-area-form {
+/* ── PinAreaForm ── */
+.pin-area-form {
   background: #111827;
   border: 1px solid #1e293b;
   border-radius: 12px;
@@ -195,16 +195,16 @@ body {
   flex-direction: column;
   gap: 1rem;
 }
-.watch-area-form h3 { margin: 0; }
-.watch-area-form label {
+.pin-area-form h3 { margin: 0; }
+.pin-area-form label {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.875rem;
   color: #94a3b8;
 }
-.watch-area-form input[type="number"],
-.watch-area-form select {
+.pin-area-form input[type="number"],
+.pin-area-form select {
   padding: 0.6rem 0.75rem;
   background: #0f172a;
   border: 1px solid #334155;
@@ -213,7 +213,7 @@ body {
   font-size: 1rem;
   outline: none;
 }
-.watch-area-form input[type="range"] { accent-color: #3b82f6; }
+.pin-area-form input[type="range"] { accent-color: #3b82f6; }
 .toggle-label { flex-direction: row !important; align-items: center; gap: 0.5rem !important; }
 .form-actions { display: flex; gap: 0.75rem; }
 
