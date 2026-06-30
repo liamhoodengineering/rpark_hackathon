@@ -11,9 +11,15 @@ interface PinAreaFormProps {
 
 const SEVERITIES: Severity[] = ['Low', 'Medium', 'High'];
 
-export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: PinAreaFormProps) {
+export function PinAreaForm({
+  defaultLat,
+  defaultLng,
+  onCreated,
+  onCancel,
+}: PinAreaFormProps) {
   const [lat, setLat] = useState(defaultLat?.toFixed(6) ?? '');
   const [lng, setLng] = useState(defaultLng?.toFixed(6) ?? '');
+  const [name, setName] = useState('');
   const [radiusM, setRadiusM] = useState(100);
   const [severity, setSeverity] = useState<Severity>('Low');
   const [expiresInHours, setExpiresInHours] = useState(24);
@@ -28,37 +34,57 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
       setError('Enter valid lat/lng coordinates.');
       return;
     }
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Title is required.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
       const pin = await pinsApi.create({
         lat: latNum,
         lng: lngNum,
+        name: trimmedName,
         radius_m: radiusM,
         severity,
         expires_in_hours: expiresInHours,
       });
       onCreated(pin);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create pin area');
+      setError(
+        err instanceof Error ? err.message : 'Failed to create pin area',
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form className="pin-area-form" onSubmit={handleSubmit}>
+    <form className='pin-area-form' onSubmit={handleSubmit}>
       <h3>New Pin Area</h3>
-      {error && <p className="error-msg">{error}</p>}
+      {error && <p className='error-msg'>{error}</p>}
+
+      <label>
+        Title
+        <input
+          type='text'
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder='e.g. Broken glass'
+          maxLength={120}
+          required
+        />
+      </label>
 
       <label>
         Latitude
         <input
-          type="number"
-          step="any"
+          type='number'
+          step='any'
           value={lat}
           onChange={(e) => setLat(e.target.value)}
-          placeholder="e.g. 40.7128"
+          placeholder='e.g. 40.7128'
           required
         />
       </label>
@@ -66,11 +92,11 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
       <label>
         Longitude
         <input
-          type="number"
-          step="any"
+          type='number'
+          step='any'
           value={lng}
           onChange={(e) => setLng(e.target.value)}
-          placeholder="e.g. -74.0060"
+          placeholder='e.g. -74.0060'
           required
         />
       </label>
@@ -78,7 +104,7 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
       <label>
         Radius: {radiusM}m
         <input
-          type="range"
+          type='range'
           min={10}
           max={500}
           step={10}
@@ -104,7 +130,7 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
       <label>
         Expires in: {expiresInHours}h
         <input
-          type="range"
+          type='range'
           min={1}
           max={24}
           step={1}
@@ -113,11 +139,11 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
         />
       </label>
 
-      <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={loading}>
+      <div className='form-actions'>
+        <button type='submit' className='btn btn-primary' disabled={loading}>
           {loading ? 'Saving…' : 'Save pin area'}
         </button>
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+        <button type='button' className='btn btn-ghost' onClick={onCancel}>
           Cancel
         </button>
       </div>

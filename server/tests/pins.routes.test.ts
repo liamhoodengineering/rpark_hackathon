@@ -109,7 +109,7 @@ test('POST /pins creates an anonymous pin with expiry', async () => {
 
   PinService.create = async (input) => {
     assert.equal(input.reporter_id, null);
-    assert.equal(input.name, null);
+    assert.equal(input.name, 'Pothole');
     assert.ok(input.expires_at);
     return {
       ...basePin,
@@ -119,16 +119,14 @@ test('POST /pins creates an anonymous pin with expiry', async () => {
     };
   };
 
-  const res = await request(app)
-    .post('/pins')
-    .send({
-      lat: 33.7756,
-      lng: -84.3963,
-      name: '   ',
-      description: 'Fresh hazard',
-      severity: 'High',
-      radius_m: 150,
-    });
+  const res = await request(app).post('/pins').send({
+    lat: 33.7756,
+    lng: -84.3963,
+    name: 'Pothole',
+    description: 'Fresh hazard',
+    severity: 'High',
+    radius_m: 150,
+  });
 
   assert.equal(res.status, 201);
   assert.equal(res.body.reporter_id, null);
@@ -142,19 +140,19 @@ test('POST /pins rejects creating a duplicate pin that is too close', async () =
   };
 
   PinService.create = async () => {
-    assert.fail('create should not be called when a nearby duplicate pin exists');
+    assert.fail(
+      'create should not be called when a nearby duplicate pin exists',
+    );
   };
 
-  const res = await request(app)
-    .post('/pins')
-    .send({
-      lat: 33.7756,
-      lng: -84.3963,
-      name: 'Crosswalk blocked duplicate',
-      description: 'Same hazard',
-      severity: 'Medium',
-      radius_m: 120,
-    });
+  const res = await request(app).post('/pins').send({
+    lat: 33.7756,
+    lng: -84.3963,
+    name: 'Crosswalk blocked duplicate',
+    description: 'Same hazard',
+    severity: 'Medium',
+    radius_m: 120,
+  });
 
   assert.equal(res.status, 409);
   assert.equal(

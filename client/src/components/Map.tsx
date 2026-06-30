@@ -64,6 +64,18 @@ const SEVERITY_COLOR: Record<Severity, string> = {
   Medium: '#f97316',
   High: '#ef4444',
 };
+const ROUTE_MODES: Array<{ id: RouteMode; label: string; icon: string }> = [
+  { id: 'drive', label: 'Drive', icon: '🚗' },
+  { id: 'walk', label: 'Walk', icon: '🚶' },
+  { id: 'bike', label: 'Bike', icon: '🚴' },
+];
+const ROUTE_MODE_ICON: Record<RouteMode, string> = {
+  drive: '🚗',
+  walk: '🚶',
+  bike: '🚴',
+};
+/** Hazards within this distance of the route (but not on it) are reported as avoided. */
+const AVOID_CORRIDOR_M = 260;
 const PIN_RADIUS_PANE = 'pin-radius-pane';
 const ROUTE_HAZARD_RADIUS_MULTIPLIER = 1.35;
 const OFF_ROUTE_THRESHOLD_M = 70;
@@ -121,13 +133,18 @@ export default function Map({
 
   const [destinationQuery, setDestinationQuery] = useState('');
   const [routeMode, setRouteMode] = useState<RouteMode>('drive');
-  const [routeSafety, setRouteSafety] = useState<'fast' | 'safe'>('fast');
-  const forceAvoidPinAreas = routeSafety === 'safe';
+  // Navigation always steers around every avoidable hazard.
+  const forceAvoidPinAreas = true;
   const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>(
     [],
   );
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [pendingDestination, setPendingDestination] =
+    useState<DestinationSearchResult | null>(null);
   const [searchingDestinations, setSearchingDestinations] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const suppressAutocompleteRef = useRef(false);
+  const fitDoneRef = useRef(false);
   const [activeDestination, setActiveDestination] =
     useState<DestinationSearchResult | null>(null);
   const [destinationLabel, setDestinationLabel] = useState('');
@@ -165,8 +182,37 @@ export default function Map({
     });
   }, [pins, severityFilter, timeFilter]);
 
-  const selectedRouteHazardIds = new Set(
-    selectedRoute?.hazards.map((hazard) => hazard.id) ?? [],
+  // Hazards the chosen route deliberately steers around: near the path's
+  // corridor but not actually crossed by it.
+  const avoidedHazards = useMemo(() => {
+    if (!selectedRoute) {
+      return [] as Pin[];
+    }
+    const onRouteIds = new Set(
+      selectedRoute.hazards.map((hazard) => hazard.id),
+    );
+    return filteredPins.filter((pin) => {
+      if (onRouteIds.has(pin.id)) {
+        return false;
+      }
+      const distance = minDistanceFromPathToPoint(
+        selectedRoute.path,
+        pin.lat,
+        pin.lng,
+      );
+      return (
+        distance > pin.radius_m && distance <= pin.radius_m + AVOID_CORRIDOR_M
+      );
+    });
+  }, [selectedRoute, filteredPins]);
+
+  const selectedRouteHazardIds = useMemo(
+    () =>
+      new Set<string>([
+        ...(selectedRoute?.hazards.map((hazard) => hazard.id) ?? []),
+        ...(showRouteHazards ? avoidedHazards.map((hazard) => hazard.id) : []),
+      ]),
+    [selectedRoute, avoidedHazards, showRouteHazards],
   );
 
   const fetchPins = useCallback(async () => {
@@ -322,7 +368,7 @@ export default function Map({
 
       return rescoredRoutes;
     });
-  }, [filteredPins, forceAvoidPinAreas]);
+  }, [filteredPins]);
 
   useEffect(() => {
     if (routeOptions.length === 0) {
@@ -337,6 +383,12 @@ export default function Map({
       return routeOptions[0].id;
     });
   }, [routeOptions]);
+
+  // Re-frame the map only when a brand-new destination is chosen (not on
+  // reroutes for the same destination), so manual panning is never interrupted.
+  useEffect(() => {
+    fitDoneRef.current = false;
+  }, [activeDestination]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -359,6 +411,7 @@ export default function Map({
         weight: isSelected ? 5 : 4,
         opacity: isSelected ? 0.94 : 0.5,
         dashArray: isSelected ? undefined : '10 8',
+        interactive: false,
       }).addTo(routeLayer);
     }
 
@@ -380,9 +433,14 @@ export default function Map({
       fillOpacity: 1,
     })
       .addTo(routeLayer)
-      .bindTooltip('Destination');
+      .bindTooltip(escapeHtml(activeDestination.label));
 
-    map.fitBounds(routeBounds, { padding: [40, 40] });
+    // Only frame the route once per destination. Re-fitting on every live GPS
+    // update would keep snapping the viewport back and block manual panning.
+    if (!fitDoneRef.current) {
+      map.fitBounds(routeBounds, { padding: [40, 40] });
+      fitDoneRef.current = true;
+    }
   }, [activeDestination, routeOptions, selectedRoute, userPosition]);
 
   // ── Toggle the draggable report marker + preview circle ──
@@ -498,10 +556,64 @@ export default function Map({
     setRouteOptions([]);
     setSelectedRouteId(null);
     setShowRouteHazards(false);
+    setShowAutocomplete(false);
     setRouteError('');
     setActiveDestination(null);
     setDestinationLabel('');
     setSearchResults([]);
+  }
+
+  // Full reset triggered by the "Clear" button: drop the route and the query.
+  function resetNavigation() {
+    clearNavigation();
+    setDestinationQuery('');
+    setPendingDestination(null);
+  }
+
+  // Fill the search box from a suggestion, but do NOT route yet — the user
+  // must press "Go" to start navigation.
+  function selectDestination(destination: DestinationSearchResult) {
+    suppressAutocompleteRef.current = true;
+    setDestinationQuery(destination.label);
+    setShowAutocomplete(false);
+    setSearchResults([]);
+    setPendingDestination(destination);
+    setRouteError('');
+  }
+
+  // "Go": route to the chosen suggestion, or geocode the typed text first.
+  async function handleGo() {
+    setShowAutocomplete(false);
+    setRouteError('');
+
+    if (pendingDestination) {
+      void navigateToDestination(pendingDestination);
+      return;
+    }
+
+    const query = destinationQuery.trim();
+    if (!query) {
+      setRouteError('Enter a destination to search.');
+      return;
+    }
+
+    try {
+      const results = await runGeocodeSearch(query);
+      if (results.length === 0) {
+        setRouteError(
+          'No matching destinations found. Try a more specific query.',
+        );
+        return;
+      }
+      suppressAutocompleteRef.current = true;
+      setDestinationQuery(results[0].label);
+      setPendingDestination(results[0]);
+      void navigateToDestination(results[0]);
+    } catch (error) {
+      setRouteError(
+        error instanceof Error ? error.message : 'Failed to search destination',
+      );
+    }
   }
 
   async function navigateToDestination(destination: DestinationSearchResult) {
@@ -575,7 +687,7 @@ export default function Map({
     void navigateToDestination(activeDestination);
     // Re-route when mode changes so duration/distance reflect drive/walk/bike.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeMode, forceAvoidPinAreas]);
+  }, [routeMode]);
 
   useEffect(() => {
     if (
@@ -620,22 +732,13 @@ export default function Map({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDestination, userPosition, selectedRoute, reportMode, navigating]);
 
-  async function searchDestinations() {
-    if (!destinationQuery.trim()) {
-      setRouteError('Enter a destination to search.');
-      setSearchResults([]);
-      return;
-    }
+  const runGeocodeSearch = useCallback(
+    async (rawQuery: string): Promise<DestinationSearchResult[]> => {
+      const query = rawQuery.trim();
+      if (!query) {
+        return [];
+      }
 
-    const map = mapRef.current;
-    if (!map) return;
-
-    setSearchingDestinations(true);
-    setRouteError('');
-    setSearchResults([]);
-
-    try {
-      const query = destinationQuery.trim();
       const parseResults = (
         geocodeData: Array<{ lat: string; lon: string; display_name: string }>,
       ) =>
@@ -673,7 +776,7 @@ export default function Map({
         const lngDelta = 1.6;
         const localUrl =
           'https://nominatim.openstreetmap.org/search?' +
-          `format=json&limit=8&q=${encodeURIComponent(query)}` +
+          `format=json&limit=6&q=${encodeURIComponent(query)}` +
           `&viewbox=${userPosition.lng - lngDelta},${userPosition.lat + latDelta},${userPosition.lng + lngDelta},${userPosition.lat - latDelta}` +
           '&bounded=1';
 
@@ -685,32 +788,68 @@ export default function Map({
         );
       }
 
-      // Fallback: global search only when nearby search is empty.
+      // Fallback: broaden the search only when the nearby search is empty.
       if (results.length === 0) {
-        const bounds = map.getBounds();
+        const map = mapRef.current;
+        const viewbox = map
+          ? (() => {
+              const bounds = map.getBounds();
+              return `&viewbox=${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()},${bounds.getSouth()}`;
+            })()
+          : '';
         const globalUrl =
           'https://nominatim.openstreetmap.org/search?' +
-          `format=json&limit=8&q=${encodeURIComponent(query)}` +
-          `&viewbox=${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()},${bounds.getSouth()}`;
+          `format=json&limit=6&q=${encodeURIComponent(query)}${viewbox}`;
         const globalData = await fetchNominatim(globalUrl);
         results = parseResults(globalData);
       }
 
-      if (results.length === 0) {
-        throw new Error(
-          'No matching destinations found. Try a more specific query.',
-        );
-      }
+      return results;
+    },
+    [userPosition],
+  );
 
-      setSearchResults(results);
-    } catch (error) {
-      setRouteError(
-        error instanceof Error ? error.message : 'Failed to search destination',
-      );
-    } finally {
-      setSearchingDestinations(false);
+  // Debounced autocomplete: fetch suggestions as the user types.
+  useEffect(() => {
+    if (suppressAutocompleteRef.current) {
+      suppressAutocompleteRef.current = false;
+      return;
     }
-  }
+
+    const query = destinationQuery.trim();
+    if (query.length < 3) {
+      setSearchResults([]);
+      setSearchingDestinations(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchingDestinations(true);
+    const handle = window.setTimeout(() => {
+      runGeocodeSearch(query)
+        .then((results) => {
+          if (!cancelled) {
+            setSearchResults(results);
+            setShowAutocomplete(true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSearchResults([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setSearchingDestinations(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [destinationQuery, runGeocodeSearch]);
 
   async function submitReport() {
     if (!reportLatLng) return;
@@ -748,55 +887,96 @@ export default function Map({
         {!reportMode && (
           <div className='map-window-toolbar'>
             <div className='nav-row'>
-              <input
-                id='destination-input'
-                className='nav-input'
-                type='text'
-                placeholder='Search destination, e.g. Walmart'
-                value={destinationQuery}
-                onChange={(e) => setDestinationQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void searchDestinations();
-                  }
-                }}
-              />
-              <select
-                className='nav-mode-select'
-                value={routeMode}
-                onChange={(e) => setRouteMode(e.target.value as RouteMode)}
-                aria-label='Navigation mode'
-              >
-                <option value='drive'>Drive</option>
-                <option value='walk'>Walk</option>
-                <option value='bike'>Bike</option>
-              </select>
-              <select
-                className='nav-mode-select'
-                value={routeSafety}
-                onChange={(e) =>
-                  setRouteSafety(e.target.value as 'fast' | 'safe')
-                }
-                aria-label='Route safety'
-              >
-                <option value='fast'>Fast</option>
-                <option value='safe'>Safe</option>
-              </select>
-              <button
-                className='btn btn-primary'
-                onClick={() => void searchDestinations()}
-                disabled={searchingDestinations || navigating}
-              >
-                {searchingDestinations ? 'Searching…' : 'Go'}
-              </button>
-              <button
-                className='btn btn-ghost'
-                onClick={clearNavigation}
-                disabled={navigating && routeOptions.length === 0}
-              >
-                Clear
-              </button>
+              <div className='nav-search'>
+                <span className='nav-search-icon' aria-hidden='true'>
+                  🔍
+                </span>
+                <input
+                  id='destination-input'
+                  className='nav-input'
+                  type='text'
+                  placeholder='Search a destination…'
+                  value={destinationQuery}
+                  autoComplete='off'
+                  onChange={(e) => {
+                    setDestinationQuery(e.target.value);
+                    setPendingDestination(null);
+                    setShowAutocomplete(true);
+                  }}
+                  onFocus={() => {
+                    if (searchResults.length > 0) setShowAutocomplete(true);
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => setShowAutocomplete(false), 150);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleGo();
+                    } else if (e.key === 'Escape') {
+                      setShowAutocomplete(false);
+                    }
+                  }}
+                />
+                {searchingDestinations && (
+                  <span className='nav-search-spinner' aria-hidden='true' />
+                )}
+                {showAutocomplete && searchResults.length > 0 && (
+                  <ul className='nav-autocomplete'>
+                    {searchResults.map((result, index) => (
+                      <li key={`${result.label}-${index}`}>
+                        <button
+                          type='button'
+                          className='nav-autocomplete-item'
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            selectDestination(result);
+                          }}
+                        >
+                          <span
+                            className='nav-autocomplete-pin'
+                            aria-hidden='true'
+                          >
+                            📍
+                          </span>
+                          <span className='nav-autocomplete-label'>
+                            {result.label}
+                          </span>
+                          {userPosition && (
+                            <span className='nav-autocomplete-dist'>
+                              {formatMiles(
+                                haversineMeters(
+                                  userPosition.lat,
+                                  userPosition.lng,
+                                  result.lat,
+                                  result.lng,
+                                ),
+                              )}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {activeDestination ? (
+                <button
+                  className='btn btn-ghost nav-go-btn'
+                  onClick={resetNavigation}
+                >
+                  Clear
+                </button>
+              ) : (
+                <button
+                  className='btn btn-primary nav-go-btn'
+                  onClick={() => void handleGo()}
+                  disabled={navigating || !destinationQuery.trim()}
+                >
+                  {navigating ? '…' : 'Go'}
+                </button>
+              )}
             </div>
             <div className='map-filter-group'>
               <label className='map-filter-label' htmlFor='map-filter-severity'>
@@ -870,121 +1050,100 @@ export default function Map({
           </svg>
         </button>
 
-        {!reportMode &&
-          (searchResults.length > 0 ||
-            destinationLabel ||
-            routeOptions.length > 0) && (
-            <div className='nav-extras'>
-              {searchResults.length > 0 && (
-                <ul className='nav-results'>
-                  {searchResults.map((result, index) => (
-                    <li
-                      key={`${result.label}-${index}`}
-                      className='nav-result-item'
-                    >
+        {!reportMode && navigating && routeOptions.length === 0 && (
+          <div className='route-chip' role='status' aria-live='polite'>
+            Finding a hazard-free route…
+          </div>
+        )}
+
+        {!reportMode && selectedRoute && (
+          <div className='nav-extras'>
+            <div className='route-summary'>
+              <div className='route-summary-head'>
+                <span className='route-summary-dest' title={destinationLabel}>
+                  {destinationLabel || 'Destination'}
+                </span>
+                <button
+                  type='button'
+                  className='route-summary-clear'
+                  onClick={clearNavigation}
+                  aria-label='Clear route'
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className='nav-modes' role='group' aria-label='Travel mode'>
+                {ROUTE_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type='button'
+                    className={`nav-mode-btn${routeMode === mode.id ? ' nav-mode-btn-active' : ''}`}
+                    onClick={() => setRouteMode(mode.id)}
+                    aria-pressed={routeMode === mode.id}
+                    title={mode.label}
+                  >
+                    <span aria-hidden='true'>{mode.icon}</span>
+                    <span className='nav-mode-text'>{mode.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className='route-summary-meta'>
+                <span aria-hidden='true'>{ROUTE_MODE_ICON[routeMode]}</span>{' '}
+                {formatDistance(selectedRoute.distanceM)} •{' '}
+                {formatDuration(selectedRoute.durationS)}
+              </div>
+
+              {avoidedHazards.length > 0 ? (
+                <button
+                  type='button'
+                  className='route-avoiding'
+                  onClick={() => setShowRouteHazards((current) => !current)}
+                  aria-expanded={showRouteHazards}
+                >
+                  <span>
+                    🛡 Avoiding {avoidedHazards.length} hazard
+                    {avoidedHazards.length === 1 ? '' : 's'}
+                  </span>
+                  <span className='route-avoiding-toggle'>
+                    {showRouteHazards ? 'Hide' : 'Show'}
+                  </span>
+                </button>
+              ) : (
+                <p className='route-clear-note'>✓ No hazards near this route</p>
+              )}
+
+              {showRouteHazards && avoidedHazards.length > 0 && (
+                <ul className='route-hazards-list'>
+                  {avoidedHazards.map((hazard) => (
+                    <li key={hazard.id}>
                       <button
-                        className='nav-result-main'
-                        onClick={() => {
-                          setDestinationQuery(result.label);
-                          void navigateToDestination(result);
-                        }}
-                        disabled={navigating}
+                        type='button'
+                        className='route-hazard-item'
+                        onClick={() => focusHazardOnMap(hazard)}
                       >
-                        {result.label}
+                        <span>
+                          {hazard.name?.trim() || 'Unnamed hazard'} •{' '}
+                          {hazard.severity}
+                        </span>
+                        <span>{Math.round(hazard.radius_m)}m zone</span>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
-              {destinationLabel && (
-                <p className='nav-destination'>To: {destinationLabel}</p>
-              )}
-              {routeOptions.length > 0 && (
-                <div className='route-options'>
-                  {routeOptions.map((route) => {
-                    const isSelected = route.id === selectedRoute?.id;
-                    return (
-                      <button
-                        key={route.id}
-                        type='button'
-                        className={`route-option${isSelected ? ' route-option-selected' : ''}`}
-                        onClick={() => setSelectedRouteId(route.id)}
-                      >
-                        <span className='route-option-title'>
-                          {route.routeLabel}
-                        </span>
-                        <span className='route-option-meta'>
-                          {formatDistance(route.distanceM)} •{' '}
-                          {formatDuration(route.durationS)} •{' '}
-                          {route.hazards.length} hazard
-                          {route.hazards.length === 1 ? '' : 's'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+
+              {selectedRoute.hazards.length > 0 && (
+                <p className='route-unavoidable'>
+                  ⚠ Passes through {selectedRoute.hazards.length} unavoidable
+                  hazard{selectedRoute.hazards.length === 1 ? '' : 's'} near
+                  your start.
+                </p>
               )}
             </div>
-          )}
-
-        {selectedRoute && !reportMode && (
-          <div className='route-chip' role='status' aria-live='polite'>
-            Route ({routeMode}): {formatDistance(selectedRoute.distanceM)} •{' '}
-            {formatDuration(selectedRoute.durationS)}
-            {selectedRoute.hazards.length > 0
-              ? ` • ⚠ ${selectedRoute.hazards.length} hazard area(s) ahead`
-              : ' • No hazard areas on route'}
           </div>
         )}
-
-        {!reportMode && selectedRoute && selectedRoute.hazards.length > 0 && (
-          <button
-            type='button'
-            className='route-chip route-chip-warning route-chip-button'
-            onClick={() => setShowRouteHazards((current) => !current)}
-            aria-expanded={showRouteHazards}
-          >
-            Warning: route passes through {selectedRoute.hazards.length} hazard
-            area(s). Highest severity: {highestSeverity(selectedRoute.hazards)}.{' '}
-            {showRouteHazards ? 'Hide hazards' : 'View hazards'}
-          </button>
-        )}
-
-        {!reportMode &&
-          selectedRoute &&
-          showRouteHazards &&
-          selectedRoute.hazards.length > 0 && (
-            <div
-              className='route-hazards-panel'
-              role='status'
-              aria-live='polite'
-            >
-              <p className='route-hazards-title'>Hazards on selected route</p>
-              <ul className='route-hazards-list'>
-                {selectedRoute.hazards.map((hazard) => (
-                  <li key={hazard.id}>
-                    <button
-                      type='button'
-                      className='route-hazard-item'
-                      onClick={() => focusHazardOnMap(hazard)}
-                    >
-                      <span>
-                        {hazard.name?.trim() || 'Unnamed hazard'}
-                        {' • '}
-                        {hazard.severity}
-                      </span>
-                      <span>
-                        {Math.round(
-                          hazard.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER,
-                        )}
-                        m zone
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
         {routeError && !reportMode && (
           <div
@@ -1107,6 +1266,14 @@ function formatDistance(distanceM: number): string {
   return `${(distanceM / 1000).toFixed(1)} km`;
 }
 
+function formatMiles(distanceM: number): string {
+  const miles = distanceM / 1609.344;
+  if (miles < 0.1) {
+    return `${Math.round(distanceM * 3.28084)} ft`;
+  }
+  return `${miles.toFixed(1)} mi`;
+}
+
 function formatDuration(durationS: number): string {
   const minutes = Math.max(1, Math.round(durationS / 60));
   if (minutes < 60) {
@@ -1115,22 +1282,6 @@ function formatDuration(durationS: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return mins > 0 ? `~${hours}h ${mins}m` : `~${hours}h`;
-}
-
-function highestSeverity(pins: Array<Pick<Pin, 'severity'>>): Severity {
-  const rank: Record<Severity, number> = {
-    Low: 1,
-    Medium: 2,
-    High: 3,
-  };
-
-  let top: Severity = 'Low';
-  for (const pin of pins) {
-    if (rank[pin.severity] > rank[top]) {
-      top = pin.severity;
-    }
-  }
-  return top;
 }
 
 function timeFilterToMs(filter: TimeFilter): number | null {
@@ -1292,9 +1443,21 @@ async function fetchRoutesWithAvoidance(
     return baseRoutes;
   }
 
-  const detourRoutes: RouteResult[] = [];
+  const baselineAvoidable = routeAvoidableHazardCount(
+    primaryRoute.path,
+    start,
+    pins,
+  );
+  // Hard ceiling so we never propose an absurd detour, even to dodge a hazard.
+  const maxDetourFactor = mode === 'walk' ? 1.8 : 2.2;
 
-  for (const waypoints of waypointPlans.slice(0, 6)) {
+  const detourRoutes: RouteResult[] = [];
+  let cleanRouteFound = false;
+
+  for (const waypoints of waypointPlans.slice(0, 12)) {
+    if (cleanRouteFound) {
+      break;
+    }
     try {
       const route = await fetchRouteViaWaypoints(
         mode,
@@ -1303,10 +1466,23 @@ async function fetchRoutesWithAvoidance(
         waypoints,
         pins,
       );
-      if (route) {
-        const maxDetourFactor = mode === 'walk' ? 1.3 : 1.6;
-        if (route.distance <= baselineDistanceM * maxDetourFactor) {
-          detourRoutes.push(route);
+      if (!route) {
+        continue;
+      }
+      if (route.distance > baselineDistanceM * maxDetourFactor) {
+        continue;
+      }
+
+      const detourPath = route.coordinates.map(
+        ([lng, lat]) => [lat, lng] as [number, number],
+      );
+      const avoidable = routeAvoidableHazardCount(detourPath, start, pins);
+
+      // Only keep a detour if it actually crosses fewer hazard areas.
+      if (avoidable < baselineAvoidable) {
+        detourRoutes.push(route);
+        if (avoidable === 0) {
+          cleanRouteFound = true;
         }
       }
     } catch {
@@ -1315,6 +1491,19 @@ async function fetchRoutesWithAvoidance(
   }
 
   return dedupeRoutes([...baseRoutes, ...detourRoutes]);
+}
+
+/** Count hazard areas a route crosses, ignoring any the trip unavoidably starts inside. */
+function routeAvoidableHazardCount(
+  path: Array<[number, number]>,
+  start: { lat: number; lng: number },
+  pins: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
+): number {
+  return pins.filter(
+    (pin) =>
+      routeIntersectsPinArea(path, pin) &&
+      !pointInsidePinArea(start.lat, start.lng, pin),
+  ).length;
 }
 
 async function fetchRouteViaWaypoints(
@@ -1429,17 +1618,13 @@ function computeAvoidanceWaypointPlans(
     plans.push([exitPointForHazard(start, destination, hazard)]);
   }
 
-  // Walking routes are especially sensitive to synthetic waypoint detours.
-  // Keep walk mode conservative: only enforce "exit first" when starting inside.
-  if (mode === 'walk') {
-    return dedupeWaypointPlans(plans);
-  }
-
+  // Steer around the hazards the road actually clips. Walk mode stays a touch
+  // more conservative (fewer detour candidates) since footpaths are denser.
   const blockingHazards = pickBlockingHazardsOnPath(
     primaryPath,
     hazards,
     start,
-    3,
+    mode === 'walk' ? 2 : 3,
   );
   for (const hazard of blockingHazards) {
     const sidePlans = sideStepWaypointPlans(hazard, start, destination);
@@ -1754,24 +1939,12 @@ function rankRouteOptions(
       ? 'Exit + Avoid'
       : 'Avoid Pin Areas';
 
-    const preferredRoutes: RouteOption[] = [
+    return [
       {
         ...primaryRoute,
         routeLabel: primaryLabel,
       },
     ];
-
-    const backupRoute = rankedByAvoidance.find(
-      (route) => route.id !== primaryRoute.id,
-    );
-    if (backupRoute) {
-      preferredRoutes.push({
-        ...backupRoute,
-        routeLabel: 'Backup Avoid',
-      });
-    }
-
-    return preferredRoutes;
   }
 
   const fastestRoute = [...scoredRoutes].sort((left, right) => {
