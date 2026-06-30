@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { watchAreasApi } from '../api/watchAreas.js';
+import { pinsApi } from '../api/pins.js';
 import { PinAreaForm } from '../components/PinAreaForm.js';
 import { useGeolocation } from '../hooks/useGeolocation.js';
-import type { WatchArea } from '../types/domain.js';
+import type { Pin } from '../types/domain.js';
 
 const SEVERITY_LABEL: Record<string, string> = {
   Low: '🟢 Low',
@@ -11,31 +11,35 @@ const SEVERITY_LABEL: Record<string, string> = {
 };
 
 export function ManageAlertsPage() {
-  const [watchAreas, setWatchAreas] = useState<WatchArea[]>([]);
+  const [pins, setPins] = useState<Pin[]>([]);
   const [loadError, setLoadError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const { position } = useGeolocation();
 
   useEffect(() => {
-    watchAreasApi
-      .list()
-      .then(setWatchAreas)
+    if (!position) {
+      return;
+    }
+
+    pinsApi
+      .list({ lat: position.lat, lng: position.lng, radius: 5000 })
+      .then(setPins)
       .catch((err) =>
-        setLoadError(err instanceof Error ? err.message : 'Failed to load alert areas'),
+        setLoadError(err instanceof Error ? err.message : 'Failed to load pins'),
       );
-  }, []);
+  }, [position]);
 
   async function handleDelete(id: string) {
     try {
-      await watchAreasApi.delete(id);
-      setWatchAreas((prev) => prev.filter((wa) => wa.id !== id));
+      await pinsApi.delete(id);
+      setPins((prev) => prev.filter((pin) => pin.id !== id));
     } catch {
       // silent — the item stays in the list so the user can retry
     }
   }
 
-  function handleCreated(wa: WatchArea) {
-    setWatchAreas((prev) => [wa, ...prev]);
+  function handleCreated(pin: Pin) {
+    setPins((prev) => [pin, ...prev]);
     setShowForm(false);
   }
 
@@ -61,28 +65,28 @@ export function ManageAlertsPage() {
 
       {loadError && <p className="error-msg">{loadError}</p>}
 
-      {watchAreas.length === 0 && !loadError && !showForm && (
+      {pins.length === 0 && !loadError && !showForm && (
         <p className="empty-state">
-          No alert areas yet. Add one to get emailed when hazards appear nearby.
+          No pins yet. Add one to report a nearby issue.
         </p>
       )}
 
       <ul className="watch-area-list">
-        {watchAreas.map((wa) => (
-          <li key={wa.id} className="watch-area-card">
+        {pins.map((pin) => (
+          <li key={pin.id} className="watch-area-card">
             <div className="watch-area-info">
-              <span className="watch-area-radius">{wa.radius_m}m radius</span>
-              <span className="watch-area-severity">{SEVERITY_LABEL[wa.min_severity]}+</span>
+              <span className="watch-area-radius">{pin.radius_m}m radius</span>
+              <span className="watch-area-severity">{SEVERITY_LABEL[pin.severity]}</span>
               <span className="watch-area-email">
-                {wa.email_enabled ? '📧 Email on' : '🔕 Email off'}
+                {pin.reporter_id ? '👤 Account pin' : '🕶 Anonymous pin'}
               </span>
               <span className="watch-area-coords">
-                {wa.lat.toFixed(4)}, {wa.lng.toFixed(4)}
+                {pin.lat.toFixed(4)}, {pin.lng.toFixed(4)}
               </span>
             </div>
             <button
               className="btn btn-danger btn-sm"
-              onClick={() => handleDelete(wa.id)}
+              onClick={() => handleDelete(pin.id)}
             >
               Delete
             </button>

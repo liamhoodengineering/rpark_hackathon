@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { watchAreasApi } from '../api/watchAreas.js';
-import type { Severity, WatchArea } from '../types/domain.js';
+import { pinsApi } from '../api/pins.js';
+import type { Pin, Severity } from '../types/domain.js';
 
 interface PinAreaFormProps {
   defaultLat?: number;
   defaultLng?: number;
-  onCreated: (wa: WatchArea) => void;
+  onCreated: (pin: Pin) => void;
   onCancel: () => void;
 }
 
@@ -15,8 +15,7 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
   const [lat, setLat] = useState(defaultLat?.toFixed(6) ?? '');
   const [lng, setLng] = useState(defaultLng?.toFixed(6) ?? '');
   const [radiusM, setRadiusM] = useState(500);
-  const [minSeverity, setMinSeverity] = useState<Severity>('Low');
-  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [severity, setSeverity] = useState<Severity>('Low');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,14 +30,13 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
     setError('');
     setLoading(true);
     try {
-      const wa = await watchAreasApi.create({
+      const pin = await pinsApi.create({
         lat: latNum,
         lng: lngNum,
         radius_m: radiusM,
-        min_severity: minSeverity,
-        email_enabled: emailEnabled,
+        severity,
       });
-      onCreated(wa);
+      onCreated(pin);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create pin area');
     } finally {
@@ -88,10 +86,10 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
       </label>
 
       <label>
-        Minimum severity
+        Severity
         <select
-          value={minSeverity}
-          onChange={(e) => setMinSeverity(e.target.value as Severity)}
+          value={severity}
+          onChange={(e) => setSeverity(e.target.value as Severity)}
         >
           {SEVERITIES.map((s) => (
             <option key={s} value={s}>
@@ -99,15 +97,6 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
             </option>
           ))}
         </select>
-      </label>
-
-      <label className="toggle-label">
-        <input
-          type="checkbox"
-          checked={emailEnabled}
-          onChange={(e) => setEmailEnabled(e.target.checked)}
-        />
-        Email alerts enabled
       </label>
 
       <div className="form-actions">
