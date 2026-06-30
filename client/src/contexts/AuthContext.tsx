@@ -8,7 +8,13 @@ interface AuthContextValue {
   user: PublicUser | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    displayName: string,
+  ) => Promise<void>;
+  updateLocation: (lat: number, lng: number) => Promise<void>;
+  setTracking: (enabled: boolean) => Promise<void>;
   logout: () => void;
 }
 
@@ -37,10 +43,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(user);
   }
 
-  async function register(email: string, password: string, displayName: string) {
-    const { token, user } = await authApi.register(email, password, displayName);
+  async function register(
+    email: string,
+    password: string,
+    displayName: string,
+  ) {
+    const { token, user } = await authApi.register(
+      email,
+      password,
+      displayName,
+    );
     setToken(token);
     setUser(user);
+  }
+
+  async function updateLocation(lat: number, lng: number) {
+    const updated = await authApi.setLocation(lat, lng);
+    setUser(updated);
+  }
+
+  async function setTracking(enabled: boolean) {
+    const updated = await authApi.setTracking(enabled);
+    setUser(updated);
   }
 
   function logout() {
@@ -49,7 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        login,
+        register,
+        updateLocation,
+        setTracking,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -18,4 +18,9 @@ export const authApi = {
       method: 'PUT',
       body: JSON.stringify({ lat, lng }),
     }),
+  setTracking: (enabled: boolean) =>
+    request<PublicUser>('/auth/me/alerts', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
 };

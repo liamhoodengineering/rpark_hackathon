@@ -8,6 +8,7 @@ export interface User {
   display_name: string;
   lat: number | null;
   lng: number | null;
+  alerts_enabled: boolean;
   upvotes_received: number;
   downvotes_received: number;
   created_at: string;

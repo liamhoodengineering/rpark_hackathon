@@ -59,6 +59,7 @@ create table users (
   display_name text not null,
   lat double precision,                  -- last known location (opt-in, for alerts)
   lng double precision,
+  alerts_enabled boolean not null default false,   -- receive nearby-hazard alerts + live-track location
   upvotes_received integer not null default 0,    -- credibility inputs
   downvotes_received integer not null default 0,
   created_at timestamptz default now()
@@ -121,7 +122,7 @@ Recompute for the affected pin after every vote:
 
 Notifications are **email-only** — the SMS/Twilio path was dropped. A generic helper `sendEmail(email, message, options?)` (`server/src/notifications/email.ts`) sends over **SMTP via Nodemailer**, which works with any provider (e.g. Brevo/Gmail) and can reach any recipient without a verified domain. `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `SMTP_PORT`/`SMTP_FROM`) are server-only env vars.
 
-**Proximity hazard alerts.** Users may opt in by saving a location (`PUT /auth/me/location` → `users.lat`/`users.lng`). When a new pin is created, `AlertService.notifyNearbyUsers(pin)` finds users whose saved location is within the pin's `radius_m` (bounding-box prefilter + **Haversine**, excluding the reporter) and emails each one the hazard's **name, severity, and description**. It runs **fire-and-forget** after the pin is inserted and is fully wrapped in try/catch, so a slow or failed send never affects `POST /pins`.
+**Proximity hazard alerts.** Users opt in with the **Nearby alerts** toggle (`PUT /auth/me/alerts` → `users.alerts_enabled`); while on, the client live-tracks them (`PUT /auth/me/location` → `users.lat`/`users.lng`). When a new pin is created, `AlertService.notifyNearbyUsers(pin)` finds **alerts-enabled** users whose saved location is within the pin's `radius_m` (SQL `alerts_enabled = true` + bounding-box prefilter, then **Haversine** refine, excluding the reporter) and emails each one the hazard's **name, severity, and description**. It runs **fire-and-forget** after the pin is inserted and is fully wrapped in try/catch, so a slow or failed send never affects `POST /pins`.
 
 ---
 
@@ -133,6 +134,7 @@ Notifications are **email-only** — the SMS/Twilio path was dropped. A generic 
 | POST   | `/auth/login`             | –        | email, password → JWT                                                                                                                                                                                                                 |
 | GET    | `/auth/me`                | JWT      | current user                                                                                                                                                                                                                          |
 | PUT    | `/auth/me/location`       | JWT      | save the caller's `lat`/`lng` (opt-in, for proximity alerts)                                                                                                                                                                          |
+| PUT    | `/auth/me/alerts`         | JWT      | toggle `alerts_enabled` (live-tracking + nearby-hazard alerts on/off)                                                                                                                                                                 |
 | GET    | `/pins?lat=&lng=&radius=` | –        | active, non-expired pins near a point (bounding-box + Haversine)                                                                                                                                                                      |
 | POST   | `/pins`                   | optional | create pin. **Anonymous** (no token) → `reporter_id=NULL`, `expires_at=now()+1h`, subject to **5-min cooldown**; **account** (JWT) → persistent. On success, fires proximity email alerts to nearby opted-in users (fire-and-forget). |
 | DELETE | `/pins/:id`               | JWT      | owner-only delete (account pins)                                                                                                                                                                                                      |

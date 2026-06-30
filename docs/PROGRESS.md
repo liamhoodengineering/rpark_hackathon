@@ -34,6 +34,26 @@
 
 ## Changelog
 
+### 2026-06-30 — Alerts toggle replaces consent modal
+
+- Removed the `LocationConsentModal` (and the now-unused generic `Modal`). Opt-in is now solely the NavBar **Nearby alerts** switch (`AlertsToggle`, renamed from `LiveTrackingToggle`); toggling it on starts live-tracking, which captures the user's location on the first reading.
+
+### 2026-06-30 — `alerts_enabled` user preference
+
+- New `users.alerts_enabled` boolean (replaces `live_tracking`). When on, the user is live-tracked (`LiveLocationSync`) **and** included in proximity-alert recipients; when off, neither. Toggle in the NavBar; `PUT /auth/me/alerts`.
+- `UserService.findWithinRadius` now SQL-filters on `alerts_enabled = true` so the nearby-users query only scans opted-in users.
+- Live DB migration: `alter table users add column if not exists alerts_enabled boolean not null default false;`
+
+### 2026-06-30 — Live location sync
+
+- New `LiveLocationSync` ([client/src/components/LiveLocationSync.tsx](../client/src/components/LiveLocationSync.tsx)) — while the app is open, continuously `watchPosition`es an opted-in user and pushes updates via `AuthContext.updateLocation` when they move ≥ 50 m (throttled to once/min). Keeps proximity-alert targeting current. (Web geolocation only runs while the tab is open — no background tracking.)
+
+### 2026-06-30 — Location-consent modal
+
+- New reusable `Modal` ([client/src/components/Modal.tsx](../client/src/components/Modal.tsx)) — portal-based dialog, closes on Escape/backdrop unless locked.
+- New `LocationConsentModal` ([client/src/components/LocationConsentModal.tsx](../client/src/components/LocationConsentModal.tsx)) — prompts a logged-in user (with no saved location) to share their browser location for nearby-hazard email alerts; saves via `AuthContext.updateLocation` → `PUT /auth/me/location`. Dismissal remembered in `localStorage`.
+- Added `updateLocation` to `AuthContext`; rendered the prompt in `App`.
+
 ### 2026-06-30 — Proximity email alerts on new pins
 
 - New users `lat`/`lng` columns (nullable, opt-in last-known location). Added `PUT /auth/me/location` ([server/src/routes/auth.ts](../server/src/routes/auth.ts)) and `authApi.setLocation` on the client.
