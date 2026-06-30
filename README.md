@@ -1,1 +1,1 @@
-Hackathon JohnDeerePlusOneTwo
+Hackathon JohnDeerePlusOne
