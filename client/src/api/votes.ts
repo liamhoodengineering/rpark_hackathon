@@ -9,5 +9,7 @@ export const votesApi = {
     }),
   cancel: (pinId: string) =>
     request<{ message: string }>(`/pins/${pinId}/vote`, { method: 'DELETE' }),
+  getMyVote: (pinId: string) =>
+    request<{ vote_type: VoteType | null }>(`/pins/${pinId}/vote`),
   getTally: (pinId: string) => request<VoteTally>(`/pins/${pinId}/votes`),
 };

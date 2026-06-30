@@ -70,6 +70,22 @@ router.get('/:id/votes', async (req, res, next) => {
   }
 });
 
+router.get('/:id/vote', verifyJwt, async (req: AuthedRequest, res, next) => {
+  try {
+    const pinId = pinIdSchema.parse(req.params.id);
+    const userId = req.auth?.sub;
+
+    if (!userId) {
+      throw new HttpError(401, 'Authentication required');
+    }
+
+    const existingVote = await VoteService.getUserVote(pinId, userId);
+    res.json({ vote_type: existingVote?.vote_type ?? null });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post(
   '/:id/vote',
   voteLimiter,

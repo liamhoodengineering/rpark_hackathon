@@ -31,6 +31,17 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
     votesApi.getTally(pin.id).then(setTally).catch(() => null);
   }, [pin.id]);
 
+  useEffect(() => {
+    if (!user) {
+      setMyVote(null);
+      return;
+    }
+    votesApi
+      .getMyVote(pin.id)
+      .then((res) => setMyVote(res.vote_type))
+      .catch(() => null);
+  }, [pin.id, user]);
+
   const isNearby =
     userPosition !== null &&
     haversineMeters(userPosition.lat, userPosition.lng, pin.lat, pin.lng) <= pin.radius_m;

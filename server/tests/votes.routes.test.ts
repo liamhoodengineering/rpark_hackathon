@@ -159,6 +159,39 @@ test('POST /pins/:id/vote records a new vote inside radius', async () => {
   assert.equal(credibilitySynced, true);
 });
 
+test('GET /pins/:id/vote returns the caller current vote', async () => {
+  VoteService.getUserVote = async (pinId, userId) => {
+    assert.equal(pinId, basePin.id);
+    assert.equal(userId, 'user-2');
+    return { id: 'vote-1', vote_type: 'down' };
+  };
+
+  const res = await request(app)
+    .get(`/pins/${basePin.id}/vote`)
+    .set('Authorization', `Bearer ${makeAuthToken('user-2')}`);
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { vote_type: 'down' });
+});
+
+test('GET /pins/:id/vote returns null when the caller has not voted', async () => {
+  VoteService.getUserVote = async () => null;
+
+  const res = await request(app)
+    .get(`/pins/${basePin.id}/vote`)
+    .set('Authorization', `Bearer ${makeAuthToken('user-2')}`);
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { vote_type: null });
+});
+
+test('GET /pins/:id/vote requires auth', async () => {
+  const res = await request(app).get(`/pins/${basePin.id}/vote`);
+
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, 'Authentication required');
+});
+
 test('DELETE /pins/:id/vote removes the caller vote', async () => {
   const tally: VoteTally = { up: 1, down: 0, total: 1 };
 
