@@ -19,6 +19,14 @@ function formatExpiry(expiresAt: string): string {
   return diffMin > 0 ? `Expires in ${diffMin}m` : 'Expired';
 }
 
+const TITLE_MAX_LENGTH = 25;
+
+function truncateTitle(name: string): string {
+  return name.length > TITLE_MAX_LENGTH
+    ? `${name.slice(0, TITLE_MAX_LENGTH).trimEnd()}…`
+    : name;
+}
+
 export function VoteCard({
   pin,
   userPosition,
@@ -112,7 +120,11 @@ export function VoteCard({
         >
           {pin.severity}
         </span>
-        {pin.name && <h3 className='pin-name'>{pin.name}</h3>}
+        {pin.name && (
+          <h3 className='pin-name' title={pin.name}>
+            {truncateTitle(pin.name)}
+          </h3>
+        )}
         {pin.description && <p className='pin-desc'>{pin.description}</p>}
         {pin.expires_at && (
           <span className='expiry-badge'>

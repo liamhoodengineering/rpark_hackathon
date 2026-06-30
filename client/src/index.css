@@ -412,11 +412,15 @@ body {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .pin-desc {
   margin: 0;
   color: #94a3b8;
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .expiry-badge,
 .anon-badge {
