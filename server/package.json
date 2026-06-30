@@ -10,8 +10,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "node --import tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit",
-    "email:test": "tsx scripts/send-test-email.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

@@ -8,6 +8,7 @@ import {
 import { pinsLimiter } from '../middleware/rateLimit.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { PinService } from '../service/PinService.js';
+import { AlertService } from '../service/AlertService.js';
 import type { PinStatus } from '../types/index.js';
 
 /**
@@ -54,7 +55,9 @@ const updatePinSchema = z.object({
   status: z.enum(['active', 'removed']).optional(),
 });
 
-function normalizeOptionalText(value: string | null | undefined): string | null {
+function normalizeOptionalText(
+  value: string | null | undefined,
+): string | null {
   if (value == null) {
     return null;
   }
@@ -107,33 +110,45 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', pinsLimiter, optionalJwt, async (req: AuthedRequest, res, next) => {
-  try {
-    const body = createPinSchema.parse(req.body);
-    const isAnonymous = !req.auth;
+router.post(
+  '/',
+  pinsLimiter,
+  optionalJwt,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const body = createPinSchema.parse(req.body);
+      const isAnonymous = !req.auth;
 
-    if (isAnonymous) {
-      enforceAnonymousCooldown(req);
+      if (isAnonymous) {
+        enforceAnonymousCooldown(req);
+      }
+
+      const pin = await PinService.create({
+        reporter_id: req.auth?.sub ?? null,
+        lat: body.lat,
+        lng: body.lng,
+        name: normalizeOptionalText(body.name),
+        description: normalizeOptionalText(body.description),
+        severity: body.severity,
+        radius_m: body.radius_m,
+        expires_at: isAnonymous
+          ? new Date(Date.now() + ANON_PIN_TTL_MS).toISOString()
+          : null,
+      });
+
+      // Best-effort: email users whose saved location is within the pin's
+      // radius. Fire-and-forget so a slow/failed send never affects the response.
+      void AlertService.notifyNearbyUsers(pin).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send proximity alerts for pin', pin.id, error);
+      });
+
+      res.status(201).json(pin);
+    } catch (error) {
+      next(error);
     }
-
-    const pin = await PinService.create({
-      reporter_id: req.auth?.sub ?? null,
-      lat: body.lat,
-      lng: body.lng,
-      name: normalizeOptionalText(body.name),
-      description: normalizeOptionalText(body.description),
-      severity: body.severity,
-      radius_m: body.radius_m,
-      expires_at: isAnonymous
-        ? new Date(Date.now() + ANON_PIN_TTL_MS).toISOString()
-        : null,
-    });
-
-    res.status(201).json(pin);
-  } catch (error) {
-    next(error);
-  }
-});
+  },
+);
 
 router.put('/:id', verifyJwt, async (req: AuthedRequest, res, next) => {
   try {

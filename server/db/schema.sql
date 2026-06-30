@@ -8,6 +8,8 @@ create table if not exists users (
   email text unique not null,
   password_hash text not null,           -- bcrypt
   display_name text not null,
+  lat double precision,                  -- last known location (opt-in, for alerts)
+  lng double precision,
   upvotes_received integer not null default 0,    -- credibility inputs
   downvotes_received integer not null default 0,
   created_at timestamptz default now()

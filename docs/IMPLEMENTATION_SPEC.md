@@ -57,6 +57,8 @@ create table users (
   email text unique not null,
   password_hash text not null,           -- bcrypt
   display_name text not null,
+  lat double precision,                  -- last known location (opt-in, for alerts)
+  lng double precision,
   upvotes_received integer not null default 0,    -- credibility inputs
   downvotes_received integer not null default 0,
   created_at timestamptz default now()
@@ -117,23 +119,26 @@ Recompute for the affected pin after every vote:
 
 ## Notifications (email-only)
 
-Notifications are **email-only** — the SMS/Twilio path was dropped. A generic helper `sendEmail(email, message, options?)` (`server/src/notifications/email.ts`) sends over **SMTP via Nodemailer**, which works with any provider (e.g. Gmail) and can reach any recipient without a verified domain. No watch-area hazard-alert system is in the current scope; use this helper for any future email notification. `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `SMTP_PORT`/`SMTP_FROM`) are server-only env vars.
+Notifications are **email-only** — the SMS/Twilio path was dropped. A generic helper `sendEmail(email, message, options?)` (`server/src/notifications/email.ts`) sends over **SMTP via Nodemailer**, which works with any provider (e.g. Brevo/Gmail) and can reach any recipient without a verified domain. `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `SMTP_PORT`/`SMTP_FROM`) are server-only env vars.
+
+**Proximity hazard alerts.** Users may opt in by saving a location (`PUT /auth/me/location` → `users.lat`/`users.lng`). When a new pin is created, `AlertService.notifyNearbyUsers(pin)` finds users whose saved location is within the pin's `radius_m` (bounding-box prefilter + **Haversine**, excluding the reporter) and emails each one the hazard's **name, severity, and description**. It runs **fire-and-forget** after the pin is inserted and is fully wrapped in try/catch, so a slow or failed send never affects `POST /pins`.
 
 ---
 
 ## API Surface (Express)
 
-| Method | Route                     | Auth     | Purpose                                                                                                                                          |
-| ------ | ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/auth/register`          | –        | email, password, display_name → JWT                                                                                                              |
-| POST   | `/auth/login`             | –        | email, password → JWT                                                                                                                            |
-| GET    | `/auth/me`                | JWT      | current user                                                                                                                                     |
-| GET    | `/pins?lat=&lng=&radius=` | –        | active, non-expired pins near a point (bounding-box + Haversine)                                                                                 |
-| POST   | `/pins`                   | optional | create pin. **Anonymous** (no token) → `reporter_id=NULL`, `expires_at=now()+1h`, subject to **5-min cooldown**; **account** (JWT) → persistent. |
-| DELETE | `/pins/:id`               | JWT      | owner-only delete (account pins)                                                                                                                 |
-| POST   | `/pins/:id/photo`         | JWT      | upload photo → Supabase Storage (EXIF stripped)                                                                                                  |
-| GET    | `/pins/:id/votes`         | –        | tally `{up, down, total}`                                                                                                                        |
-| POST   | `/pins/:id/vote`          | JWT      | account-only; one up/down per user (`unique(pin_id,user_id)`); server verifies caller within `radius_m`; runs removal logic + credibility sync   |
+| Method | Route                     | Auth     | Purpose                                                                                                                                                                                                                               |
+| ------ | ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/auth/register`          | –        | email, password, display_name → JWT                                                                                                                                                                                                   |
+| POST   | `/auth/login`             | –        | email, password → JWT                                                                                                                                                                                                                 |
+| GET    | `/auth/me`                | JWT      | current user                                                                                                                                                                                                                          |
+| PUT    | `/auth/me/location`       | JWT      | save the caller's `lat`/`lng` (opt-in, for proximity alerts)                                                                                                                                                                          |
+| GET    | `/pins?lat=&lng=&radius=` | –        | active, non-expired pins near a point (bounding-box + Haversine)                                                                                                                                                                      |
+| POST   | `/pins`                   | optional | create pin. **Anonymous** (no token) → `reporter_id=NULL`, `expires_at=now()+1h`, subject to **5-min cooldown**; **account** (JWT) → persistent. On success, fires proximity email alerts to nearby opted-in users (fire-and-forget). |
+| DELETE | `/pins/:id`               | JWT      | owner-only delete (account pins)                                                                                                                                                                                                      |
+| POST   | `/pins/:id/photo`         | JWT      | upload photo → Supabase Storage (EXIF stripped)                                                                                                                                                                                       |
+| GET    | `/pins/:id/votes`         | –        | tally `{up, down, total}`                                                                                                                                                                                                             |
+| POST   | `/pins/:id/vote`          | JWT      | account-only; one up/down per user (`unique(pin_id,user_id)`); server verifies caller within `radius_m`; runs removal logic + credibility sync                                                                                        |
 
 Cross-cutting: `verifyJwt` middleware (required on votes/delete; **optional** on `POST /pins`), `express-rate-limit` on `/pins` (plus the per-device **5-min anonymous cooldown**) and `/vote`, zod validation, CORS locked to the frontend origin.
 

@@ -34,6 +34,18 @@
 
 ## Changelog
 
+### 2026-06-30 — Proximity email alerts on new pins
+
+- New users `lat`/`lng` columns (nullable, opt-in last-known location). Added `PUT /auth/me/location` ([server/src/routes/auth.ts](../server/src/routes/auth.ts)) and `authApi.setLocation` on the client.
+- New `AlertService.notifyNearbyUsers(pin)` ([server/src/service/AlertService.ts](../server/src/service/AlertService.ts)) — finds users within the pin's `radius_m` (`UserService.findWithinRadius`, bounding-box + Haversine in [server/src/lib/geo.ts](../server/src/lib/geo.ts)) and emails them the hazard name/severity/description. Reporter is excluded.
+- Hooked into `POST /pins` as **fire-and-forget** (wrapped in try/catch) so it never blocks or fails pin creation.
+- Updated `User` types (server + client). Tests: [server/tests/alert.notify.test.ts](../server/tests/alert.notify.test.ts).
+- **Live DB migration** (Supabase SQL editor):
+  ```sql
+  alter table users add column if not exists lat double precision;
+  alter table users add column if not exists lng double precision;
+  ```
+
 ### 2026-06-30 — Dropped PostGIS; pins use plain lat/lng
 
 - Removed PostGIS. `pins` now stores `lat double precision` + `lng double precision` instead of `geom geography(Point,4326)`; dropped the `create extension postgis` and the GiST index.
