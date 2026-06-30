@@ -13,7 +13,7 @@
 ## Project at a glance
 
 - **App:** PinPoint — live crowd-sourced pedestrian hazard map.
-- **Stack:** React + Mapbox GL JS (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · Resend (email) · Twilio (SMS).
+- **Stack:** React + Leaflet (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · Resend (email) · Twilio (SMS).
 - **Spec:** see [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) and [docs/pinpoint_spec.md](docs/pinpoint_spec.md).
 - **Layout:** `server/` (API) · `client/` (SPA) · `docs/` (specs).
 
@@ -28,12 +28,27 @@
 | Auth routes                        | 🟦 Stub — Team Member #2              |
 | Pins routes                        | 🟦 Stub — Team Member #3              |
 | Votes routes                       | 🟦 Stub — Team Member #4              |
-| Watch-areas routes                 | 🟦 Stub — Team Member #3              |
 | Client (Vite + React)              | ✅ Scaffolded (map + pages are stubs) |
 
 ---
 
 ## Changelog
+
+### 2026-06-30 — Switched map library Mapbox → Leaflet
+
+- Mapbox requires billing, so the client now uses **Leaflet + OpenStreetMap** tiles (free, no API key).
+- Swapped deps in `client/package.json` (`leaflet` + `@types/leaflet`, removed `mapbox-gl`).
+- Removed `VITE_MAPBOX_TOKEN` from `client/.env` and `client/src/vite-env.d.ts`.
+- Added `client/src/components/Map.tsx` (base map with OSM tile layer) and wired it into `App.tsx`; added `.map` styling in `index.css`.
+- Team Member #5: add hazard pins (severity markers + radius circles) + fetch-on-`moveend` to the new Map component.
+
+### 2026-06-30 — Removed WatchAreas (email-alert / "Ring ring" bonus)
+
+- Dropped the watch-areas feature from the codebase per product decision.
+- Deleted `server/src/routes/watchAreas.ts`; unmounted its router in `server/src/app.ts`.
+- Removed `watchAreaLimiter` (`server/src/middleware/rateLimit.ts`), the `WatchArea` type (`server/src/types/index.ts`), and the `watch_areas` table + index (`server/db/schema.sql`).
+- Cleaned up watch-area mentions in comments (`routes/pins.ts`, `middleware/auth.ts`, `client/src/api/client.ts`).
+- Note: the design docs (`docs/IMPLEMENTATION_SPEC.md`, `docs/DB_schema (SQL).md`) still describe watch areas — left untouched; update if the spec should reflect the removal.
 
 ### 2026-06-30 — Port change (client 3000, server 8080)
 

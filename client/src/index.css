@@ -46,3 +46,10 @@ body {
   color: #94a3b8;
   font-size: 0.9rem;
 }
+
+.map {
+  height: 420px;
+  margin-top: 1.5rem;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+}
