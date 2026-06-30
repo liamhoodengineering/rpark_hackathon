@@ -144,7 +144,6 @@ export default function Map({
   const [searchingDestinations, setSearchingDestinations] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const suppressAutocompleteRef = useRef(false);
-  const fitDoneRef = useRef(false);
   const [activeDestination, setActiveDestination] =
     useState<DestinationSearchResult | null>(null);
   const [destinationLabel, setDestinationLabel] = useState('');
@@ -384,12 +383,6 @@ export default function Map({
     });
   }, [routeOptions]);
 
-  // Re-frame the map only when a brand-new destination is chosen (not on
-  // reroutes for the same destination), so manual panning is never interrupted.
-  useEffect(() => {
-    fitDoneRef.current = false;
-  }, [activeDestination]);
-
   useEffect(() => {
     const map = mapRef.current;
     const routeLayer = routeLayerRef.current;
@@ -400,8 +393,6 @@ export default function Map({
     if (!selectedRoute || !userPosition || !activeDestination) {
       return;
     }
-
-    const routeBounds = L.latLngBounds(selectedRoute.path);
 
     for (const route of routeOptions) {
       const isSelected = route.id === selectedRoute.id;
@@ -434,13 +425,6 @@ export default function Map({
     })
       .addTo(routeLayer)
       .bindTooltip(escapeHtml(activeDestination.label));
-
-    // Only frame the route once per destination. Re-fitting on every live GPS
-    // update would keep snapping the viewport back and block manual panning.
-    if (!fitDoneRef.current) {
-      map.fitBounds(routeBounds, { padding: [40, 40] });
-      fitDoneRef.current = true;
-    }
   }, [activeDestination, routeOptions, selectedRoute, userPosition]);
 
   // ── Toggle the draggable report marker + preview circle ──
@@ -587,7 +571,7 @@ export default function Map({
     setRouteError('');
 
     if (pendingDestination) {
-      void navigateToDestination(pendingDestination);
+      void navigateToDestination(pendingDestination, { fitToRoute: true });
       return;
     }
 
@@ -608,7 +592,7 @@ export default function Map({
       suppressAutocompleteRef.current = true;
       setDestinationQuery(results[0].label);
       setPendingDestination(results[0]);
-      void navigateToDestination(results[0]);
+      void navigateToDestination(results[0], { fitToRoute: true });
     } catch (error) {
       setRouteError(
         error instanceof Error ? error.message : 'Failed to search destination',
@@ -616,7 +600,10 @@ export default function Map({
     }
   }
 
-  async function navigateToDestination(destination: DestinationSearchResult) {
+  async function navigateToDestination(
+    destination: DestinationSearchResult,
+    options?: { fitToRoute?: boolean },
+  ) {
     if (!userPosition) {
       setRouteError('Enable location to start navigation.');
       return;
@@ -653,6 +640,12 @@ export default function Map({
       setActiveDestination(destination);
       setDestinationLabel(destination.label);
       setSearchResults([]);
+
+      if (options?.fitToRoute !== false) {
+        const bounds = L.latLngBounds(rankedRoutes[0].path);
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+
       lastRerouteAtRef.current = Date.now();
       if (userPosition) {
         lastReroutePositionRef.current = {
@@ -684,7 +677,7 @@ export default function Map({
     if (!activeDestination || reportMode || navigating) {
       return;
     }
-    void navigateToDestination(activeDestination);
+    void navigateToDestination(activeDestination, { fitToRoute: false });
     // Re-route when mode changes so duration/distance reflect drive/walk/bike.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeMode]);
@@ -727,7 +720,7 @@ export default function Map({
       }
     }
 
-    void navigateToDestination(activeDestination);
+    void navigateToDestination(activeDestination, { fitToRoute: false });
     // Reroute only when user meaningfully leaves the current route geometry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDestination, userPosition, selectedRoute, reportMode, navigating]);
