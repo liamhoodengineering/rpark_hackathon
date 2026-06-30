@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { pinsApi } from '../api/pins.js';
@@ -39,6 +39,8 @@ interface DestinationSearchResult {
 }
 
 type RouteMode = 'drive' | 'walk' | 'bike';
+type SeverityFilter = 'all' | Severity;
+type TimeFilter = 'all' | '1h' | '6h' | '24h' | '7d';
 
 interface RouteResult {
   distance: number;
@@ -97,6 +99,8 @@ export default function Map({
 
   const { user } = useAuth();
   const [pins, setPins] = useState<Pin[]>([]);
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   // ── Report flow state ──
   const [reportMode, setReportMode] = useState(false);
@@ -124,6 +128,26 @@ export default function Map({
 
   const selectedRoute =
     routeOptions.find((route) => route.id === selectedRouteId) ?? routeOptions[0] ?? null;
+
+  const filteredPins = useMemo(() => {
+    const nowMs = Date.now();
+    const maxAgeMs = timeFilterToMs(timeFilter);
+
+    return pins.filter((pin) => {
+      if (severityFilter !== 'all' && pin.severity !== severityFilter) {
+        return false;
+      }
+
+      if (maxAgeMs !== null) {
+        const createdAtMs = new Date(pin.created_at).getTime();
+        if (!Number.isFinite(createdAtMs) || nowMs - createdAtMs > maxAgeMs) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [pins, severityFilter, timeFilter]);
 
   const selectedRouteHazardIds = new Set(selectedRoute?.hazards.map((hazard) => hazard.id) ?? []);
 
@@ -214,7 +238,7 @@ export default function Map({
     if (!layer) return;
     layer.clearLayers();
 
-    for (const pin of pins) {
+    for (const pin of filteredPins) {
       const color = SEVERITY_COLOR[pin.severity];
 
       const shouldShowSelectedRadius = pin.id === selectedPinId;
@@ -254,7 +278,7 @@ export default function Map({
         onPinSelectRef.current(pin);
       });
     }
-  }, [pins, selectedPinId, selectedRouteHazardIds, showRouteHazards]);
+  }, [filteredPins, selectedPinId, selectedRouteHazardIds, showRouteHazards]);
 
   useEffect(() => {
     setRouteOptions((currentRoutes) => {
@@ -268,12 +292,12 @@ export default function Map({
           duration: route.durationS,
           coordinates: route.path.map(([lat, lng]) => [lng, lat] as [number, number]),
         })),
-        pins,
+        filteredPins,
       );
 
       return rescoredRoutes;
     });
-  }, [pins]);
+  }, [filteredPins]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -434,7 +458,7 @@ export default function Map({
 
     try {
       const routes = await fetchRoutesForMode(routeMode, userPosition, destination);
-      const rankedRoutes = rankRouteOptions(routes, pins);
+      const rankedRoutes = rankRouteOptions(routes, filteredPins);
 
       if (rankedRoutes.length === 0) {
         throw new Error('No route found for this destination.');
@@ -656,6 +680,40 @@ export default function Map({
               Clear
             </button>
           </div>
+          <div className="map-filter-row">
+            <label className="map-filter-label" htmlFor="map-filter-severity">
+              Severity
+            </label>
+            <select
+              id="map-filter-severity"
+              className="map-filter-select"
+              value={severityFilter}
+              onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
+            >
+              <option value="all">All</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+
+            <label className="map-filter-label" htmlFor="map-filter-time">
+              Time
+            </label>
+            <select
+              id="map-filter-time"
+              className="map-filter-select"
+              value={timeFilter}
+              onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
+            >
+              <option value="all">All time</option>
+              <option value="1h">Last 1h</option>
+              <option value="6h">Last 6h</option>
+              <option value="24h">Last 24h</option>
+              <option value="7d">Last 7d</option>
+            </select>
+
+            <span className="map-filter-count">{filteredPins.length} shown</span>
+          </div>
           {searchResults.length > 0 && (
             <ul className="nav-results">
               {searchResults.map((result, index) => (
@@ -872,6 +930,14 @@ function highestSeverity(pins: Array<Pick<Pin, 'severity'>>): Severity {
     }
   }
   return top;
+}
+
+function timeFilterToMs(filter: TimeFilter): number | null {
+  if (filter === '1h') return 60 * 60 * 1000;
+  if (filter === '6h') return 6 * 60 * 60 * 1000;
+  if (filter === '24h') return 24 * 60 * 60 * 1000;
+  if (filter === '7d') return 7 * 24 * 60 * 60 * 1000;
+  return null;
 }
 
 function routeUrlCandidates(

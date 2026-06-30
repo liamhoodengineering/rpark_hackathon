@@ -461,6 +461,39 @@ body {
   gap: 0.5rem;
 }
 
+.map-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.map-filter-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.map-filter-select {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.38rem 0.45rem;
+  font-size: 0.8rem;
+  min-width: 86px;
+}
+
+.map-filter-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.map-filter-count {
+  margin-left: auto;
+  font-size: 0.74rem;
+  color: #cbd5e1;
+}
+
 .nav-input {
   flex: 1;
   min-width: 0;
