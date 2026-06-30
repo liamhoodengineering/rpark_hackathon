@@ -31,15 +31,11 @@ export const env = {
   supabaseUrl: required('SUPABASE_URL'),
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
 
-  resendApiKey: optional('RESEND_API_KEY'),
-  alertsFromEmail: optional(
-    'ALERTS_FROM_EMAIL',
-    'PinPoint <onboarding@resend.dev>',
-  ),
-
-  twilioAccountSid: optional('TWILIO_ACCOUNT_SID'),
-  twilioAuthToken: optional('TWILIO_AUTH_TOKEN'),
-  twilioFromNumber: optional('TWILIO_FROM_NUMBER'),
+  smtpHost: optional('SMTP_HOST'),
+  smtpPort: Number(optional('SMTP_PORT', '587')),
+  smtpUser: optional('SMTP_USER'),
+  smtpPass: optional('SMTP_PASS'),
+  smtpFrom: optional('SMTP_FROM'),
 
   get isProd(): boolean {
     return this.nodeEnv === 'production';

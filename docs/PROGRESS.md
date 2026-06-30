@@ -13,7 +13,7 @@
 ## Project at a glance
 
 - **App:** PinPoint — live crowd-sourced pedestrian hazard map.
-- **Stack:** React + Leaflet (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · Resend (email) · Twilio (SMS).
+- **Stack:** React + Leaflet (client) · Node + Express + TypeScript (server) · Supabase (Postgres/PostGIS/Storage) · JWT auth · SMTP email (Nodemailer).
 - **Spec:** see [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) and [docs/pinpoint_spec.md](docs/pinpoint_spec.md).
 - **Layout:** `server/` (API) · `client/` (SPA) · `docs/` (specs).
 
@@ -21,7 +21,7 @@
 
 | Area                               | State                                 |
 | ---------------------------------- | ------------------------------------- |
-| Notification module (email + SMS)  | ✅ Implemented (typed)                |
+| Notification module (email)        | ✅ Implemented (typed)                |
 | Repo / monorepo scaffold           | ✅ Implemented                        |
 | Server app skeleton + middleware   | ✅ Scaffolded (routes are stubs)      |
 | DB schema (`server/db/schema.sql`) | ✅ Written (run against Supabase)     |
@@ -33,6 +33,26 @@
 ---
 
 ## Changelog
+
+### 2026-06-30 — Email provider: Resend → SMTP (Nodemailer)
+
+- Resend (and Mailgun sandbox) can't send to arbitrary recipients without a verified domain. Switched the email helper to **SMTP via Nodemailer** so it can email anyone with no domain (e.g. Gmail App Password).
+- Rewrote [server/src/notifications/email.ts](../server/src/notifications/email.ts); same `sendEmail(email, message, options?)` signature, now returns the SMTP `messageId`.
+- Swapped deps: removed `resend`, added `nodemailer` + `@types/nodemailer`.
+- New env vars in `server/.env`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (replaced `RESEND_API_KEY`/`ALERTS_FROM_EMAIL`). Updated `server/src/config/env.ts`.
+- Test with: `npm run email:test --workspace server -- you@example.com`.
+- **Gmail setup:** enable 2-Step Verification → create an App Password → use it as `SMTP_PASS`.
+
+### 2026-06-30 — Synced IMPLEMENTATION_SPEC with current code
+
+- Updated [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md) to match the code: removed all **watch areas** content (table, `/watch-areas` endpoints, email-alert match logic, "Manage Alerts" UI, "Ring ring" stretch goal) and reflected **email-only** notifications.
+- Replaced the "Email Alert Logic" section with a short "Notifications (email-only)" note describing the generic `sendEmail` helper; trimmed the affected work-division, data-security, and verification items.
+
+### 2026-06-30 — Removed SMS notifications (email-only)
+
+- Notifications are now **email-only**. Dropped the SMS/Twilio system entirely.
+- Deleted `server/src/notifications/sms.ts`; removed its export from `notifications/index.ts`.
+- Removed Twilio env vars from `server/src/config/env.ts` and `server/.env`, and the `twilio` dependency from `server/package.json` (uninstalled).
 
 ### 2026-06-30 — Switched map library Mapbox → Leaflet
 
