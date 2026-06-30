@@ -43,7 +43,7 @@ const createPinSchema = z.object({
   name: z.string().trim().max(120).nullable().optional(),
   description: z.string().trim().max(1000).nullable().optional(),
   severity: z.enum(['Low', 'Medium', 'High']),
-  radius_m: z.number().int().positive().max(5000),
+  radius_m: z.number().int().min(10).max(500),
 });
 
 const updatePinSchema = z.object({
@@ -52,7 +52,7 @@ const updatePinSchema = z.object({
   name: z.string().trim().max(120).nullable().optional(),
   description: z.string().trim().max(1000).nullable().optional(),
   severity: z.enum(['Low', 'Medium', 'High']),
-  radius_m: z.number().int().positive().max(5000),
+  radius_m: z.number().int().min(10).max(500),
   status: z.enum(['active', 'removed']).optional(),
 });
 

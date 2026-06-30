@@ -14,7 +14,7 @@ const SEVERITIES: Severity[] = ['Low', 'Medium', 'High'];
 export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: PinAreaFormProps) {
   const [lat, setLat] = useState(defaultLat?.toFixed(6) ?? '');
   const [lng, setLng] = useState(defaultLng?.toFixed(6) ?? '');
-  const [radiusM, setRadiusM] = useState(500);
+  const [radiusM, setRadiusM] = useState(100);
   const [severity, setSeverity] = useState<Severity>('Low');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -77,9 +77,9 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
         Radius: {radiusM}m
         <input
           type="range"
-          min={100}
-          max={5000}
-          step={100}
+          min={10}
+          max={500}
+          step={10}
           value={radiusM}
           onChange={(e) => setRadiusM(Number(e.target.value))}
         />
