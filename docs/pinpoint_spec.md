@@ -13,7 +13,7 @@ A live, crowd-sourced map where pedestrians flag safety hazards — potholes, br
 ## Core Features (the 3 we're committing to)
 Per [[The Prompt]], exactly three features are required for the build. We're scoping to:
 
-1. **Plugged in** — Integrate a mapping API (e.g. Google Maps / Mapbox / Leaflet + OpenStreetMap) to render pins, radii, and the live map surface.
+1. **Plugged in** — Integrate a mapping library (**Leaflet + OpenStreetMap**, free, no API key) to render pins, radii, and the live map surface.
 2. **Where are you** — Location is core to the app: pins are geo-anchored, and voting eligibility is gated by proximity to the pin.
 3. **Mob mentality** — Users contribute pins and votes; the community's shared input determines what stays on the map.
 
@@ -74,7 +74,7 @@ Since [[Judging Criteria]] explicitly scores **data security**, build these in f
 
 ## Open Questions / Decisions Still Needed
 - **Severity categories**: should Low/Medium/High map to specific hazard types (e.g. pothole = Low by default, unsafe area = High by default), or is severity always a free user choice?
-- **Map API choice**: Google Maps (best UX, has usage limits/cost) vs. Mapbox vs. Leaflet+OpenStreetMap (free, more setup). Recommend Leaflet+OSM for a hackathon to avoid API key/billing friction.
+- **Map API choice**: ✅ **Resolved — Leaflet + OpenStreetMap** (free, no API key or billing). Google Maps and Mapbox were considered but both add usage cost/billing friction. The client renders with Leaflet using CARTO Voyager basemap tiles (still OpenStreetMap data), since `tile.openstreetmap.org` is blocked on some networks.
 - **GPS spoofing**: for MVP, trust client-reported location (acceptable for hackathon scope); note as a known limitation in the pitch rather than solving it.
 - **What happens to votes when a pin is removed?** Likely just archived/discarded — confirm before building the schema.
 - **Stretch goal sequencing**: if time allows, which of Live / Ring / NoMistakes gets built first? Recommend Live updates first (highest demo impact, pairs naturally with the existing map).
