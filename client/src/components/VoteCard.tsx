@@ -23,6 +23,7 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
   const { user } = useAuth();
   const [tally, setTally] = useState<VoteTally | null>(null);
   const [voting, setVoting] = useState(false);
+  const [hasVoted, setHasVoted] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [voteError, setVoteError] = useState('');
 
@@ -44,6 +45,7 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
       await votesApi.cast(pin.id, voteType, userPosition.lat, userPosition.lng);
       const updated = await votesApi.getTally(pin.id);
       setTally(updated);
+      setHasVoted(true);
       onVoteCast?.();
     } catch (err) {
       setVoteError(err instanceof Error ? err.message : 'Vote failed');
@@ -102,6 +104,8 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
           <p className="vote-prompt">Enable location to vote.</p>
         ) : !isNearby ? (
           <p className="vote-prompt">Get closer to vote on this pin.</p>
+        ) : hasVoted ? (
+          <p className="vote-prompt">Thanks for your vote.</p>
         ) : !isOwner ? (
           <>
             <p className="vote-label">Is this hazard still here?</p>
