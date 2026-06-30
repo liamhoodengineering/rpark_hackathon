@@ -19,6 +19,9 @@ export function NavBar() {
       <div className='navbar-links'>
         {user ? (
           <>
+            <Link to='/my-pins' className='nav-link'>
+              My Pins
+            </Link>
             <Link to='/alerts' className='nav-link'>
               Alerts
             </Link>

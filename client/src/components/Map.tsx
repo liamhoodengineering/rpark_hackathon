@@ -102,12 +102,16 @@ export default function Map({
 
   const { user } = useAuth();
   const [pins, setPins] = useState<Pin[]>([]);
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('high_and_lower');
+  const [severityFilter, setSeverityFilter] =
+    useState<SeverityFilter>('high_and_lower');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   // ── Report flow state ──
   const [reportMode, setReportMode] = useState(false);
-  const [reportLatLng, setReportLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [reportLatLng, setReportLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [reportRadius, setReportRadius] = useState(100);
   const [reportSeverity, setReportSeverity] = useState<Severity>('Medium');
   const [reportExpiresHours, setReportExpiresHours] = useState(24);
@@ -119,19 +123,22 @@ export default function Map({
   const [destinationQuery, setDestinationQuery] = useState('');
   const [routeMode, setRouteMode] = useState<RouteMode>('drive');
   const [forceAvoidPinAreas, setForceAvoidPinAreas] = useState(false);
-  const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>(
+    [],
+  );
   const [searchingDestinations, setSearchingDestinations] = useState(false);
   const [navigating, setNavigating] = useState(false);
-  const [activeDestination, setActiveDestination] = useState<DestinationSearchResult | null>(
-    null,
-  );
+  const [activeDestination, setActiveDestination] =
+    useState<DestinationSearchResult | null>(null);
   const [destinationLabel, setDestinationLabel] = useState('');
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [showRouteHazards, setShowRouteHazards] = useState(false);
   const [routeError, setRouteError] = useState('');
   const lastRerouteAtRef = useRef(0);
-  const lastReroutePositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastReroutePositionRef = useRef<{ lat: number; lng: number } | null>(
+    null,
+  );
 
   // ── Draggable nav panel ──
   const navPanelRef = useRef<HTMLDivElement>(null);
@@ -179,7 +186,9 @@ export default function Map({
   }
 
   const selectedRoute =
-    routeOptions.find((route) => route.id === selectedRouteId) ?? routeOptions[0] ?? null;
+    routeOptions.find((route) => route.id === selectedRouteId) ??
+    routeOptions[0] ??
+    null;
 
   const filteredPins = useMemo(() => {
     const nowMs = Date.now();
@@ -201,7 +210,9 @@ export default function Map({
     });
   }, [pins, severityFilter, timeFilter]);
 
-  const selectedRouteHazardIds = new Set(selectedRoute?.hazards.map((hazard) => hazard.id) ?? []);
+  const selectedRouteHazardIds = new Set(
+    selectedRoute?.hazards.map((hazard) => hazard.id) ?? [],
+  );
 
   const fetchPins = useCallback(async () => {
     try {
@@ -272,13 +283,16 @@ export default function Map({
     if (userMarkerRef.current) {
       userMarkerRef.current.setLatLng([userPosition.lat, userPosition.lng]);
     } else {
-      userMarkerRef.current = L.circleMarker([userPosition.lat, userPosition.lng], {
-        radius: 6,
-        color: '#fff',
-        weight: 2,
-        fillColor: '#3b82f6',
-        fillOpacity: 1,
-      })
+      userMarkerRef.current = L.circleMarker(
+        [userPosition.lat, userPosition.lng],
+        {
+          radius: 6,
+          color: '#fff',
+          weight: 2,
+          fillColor: '#3b82f6',
+          fillOpacity: 1,
+        },
+      )
         .addTo(map)
         .bindTooltip('You are here');
     }
@@ -342,7 +356,9 @@ export default function Map({
         currentRoutes.map((route) => ({
           distance: route.distanceM,
           duration: route.durationS,
-          coordinates: route.path.map(([lat, lng]) => [lng, lat] as [number, number]),
+          coordinates: route.path.map(
+            ([lat, lng]) => [lng, lat] as [number, number],
+          ),
         })),
         filteredPins,
         { forceAvoidPinAreas },
@@ -436,16 +452,19 @@ export default function Map({
         reportMarkerRef.current = marker;
       }
       if (!reportCircleRef.current) {
-        reportCircleRef.current = L.circle([reportLatLng.lat, reportLatLng.lng], {
-          pane: PIN_RADIUS_PANE,
-          radius: reportRadius,
-          color: SEVERITY_COLOR[reportSeverity],
-          weight: 2,
-          dashArray: '6 6',
-          fillColor: SEVERITY_COLOR[reportSeverity],
-          fillOpacity: 0.12,
-          interactive: false,
-        }).addTo(map);
+        reportCircleRef.current = L.circle(
+          [reportLatLng.lat, reportLatLng.lng],
+          {
+            pane: PIN_RADIUS_PANE,
+            radius: reportRadius,
+            color: SEVERITY_COLOR[reportSeverity],
+            weight: 2,
+            dashArray: '6 6',
+            fillColor: SEVERITY_COLOR[reportSeverity],
+            fillOpacity: 0.12,
+            interactive: false,
+          },
+        ).addTo(map);
       }
     } else {
       reportMarkerRef.current?.remove();
@@ -497,7 +516,10 @@ export default function Map({
   function recenterOnUser() {
     const map = mapRef.current;
     if (!map || !userPosition) return;
-    map.flyTo([userPosition.lat, userPosition.lng], Math.max(map.getZoom(), 16));
+    map.flyTo(
+      [userPosition.lat, userPosition.lng],
+      Math.max(map.getZoom(), 16),
+    );
   }
 
   function clearNavigation() {
@@ -526,7 +548,12 @@ export default function Map({
 
     try {
       const routes = forceAvoidPinAreas
-        ? await fetchRoutesWithAvoidance(routeMode, userPosition, destination, filteredPins)
+        ? await fetchRoutesWithAvoidance(
+            routeMode,
+            userPosition,
+            destination,
+            filteredPins,
+          )
         : await fetchRoutesForMode(routeMode, userPosition, destination);
       const rankedRoutes = rankRouteOptions(routes, filteredPins, {
         forceAvoidPinAreas,
@@ -552,7 +579,9 @@ export default function Map({
       }
     } catch (error) {
       clearNavigation();
-      setRouteError(error instanceof Error ? error.message : 'Failed to start navigation');
+      setRouteError(
+        error instanceof Error ? error.message : 'Failed to start navigation',
+      );
     } finally {
       setNavigating(false);
     }
@@ -578,7 +607,13 @@ export default function Map({
   }, [routeMode, forceAvoidPinAreas]);
 
   useEffect(() => {
-    if (!activeDestination || !userPosition || !selectedRoute || reportMode || navigating) {
+    if (
+      !activeDestination ||
+      !userPosition ||
+      !selectedRoute ||
+      reportMode ||
+      navigating
+    ) {
       return;
     }
 
@@ -639,7 +674,9 @@ export default function Map({
             lng: Number(item.lon),
             label: item.display_name,
           }))
-          .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+          .filter(
+            (item) => Number.isFinite(item.lat) && Number.isFinite(item.lng),
+          );
 
       const fetchNominatim = async (url: string) => {
         const response = await fetch(url, {
@@ -689,12 +726,16 @@ export default function Map({
       }
 
       if (results.length === 0) {
-        throw new Error('No matching destinations found. Try a more specific query.');
+        throw new Error(
+          'No matching destinations found. Try a more specific query.',
+        );
       }
 
       setSearchResults(results);
     } catch (error) {
-      setRouteError(error instanceof Error ? error.message : 'Failed to search destination');
+      setRouteError(
+        error instanceof Error ? error.message : 'Failed to search destination',
+      );
     } finally {
       setSearchingDestinations(false);
     }
@@ -717,66 +758,72 @@ export default function Map({
       cancelReport();
       fetchPins();
     } catch (err) {
-      setReportError(err instanceof Error ? err.message : 'Failed to create pin');
+      setReportError(
+        err instanceof Error ? err.message : 'Failed to create pin',
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="map-view">
-      <div ref={containerRef} className="map" />
+    <div className='map-view'>
+      <div ref={containerRef} className='map' />
 
       <button
-        className="locate-fab"
+        className='locate-fab'
         onClick={recenterOnUser}
         disabled={!userPosition}
         title={userPosition ? 'Center on my location' : 'Locating…'}
-        aria-label="Center on my location"
+        aria-label='Center on my location'
       >
         <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+          width='22'
+          height='22'
+          viewBox='0 0 24 24'
+          fill='none'
+          stroke='currentColor'
           strokeWidth={2}
-          strokeLinecap="round"
+          strokeLinecap='round'
         >
-          <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
-          <circle cx="12" cy="12" r="7" />
-          <line x1="12" y1="1.5" x2="12" y2="4" />
-          <line x1="12" y1="20" x2="12" y2="22.5" />
-          <line x1="1.5" y1="12" x2="4" y2="12" />
-          <line x1="20" y1="12" x2="22.5" y2="12" />
+          <circle cx='12' cy='12' r='3.5' fill='currentColor' stroke='none' />
+          <circle cx='12' cy='12' r='7' />
+          <line x1='12' y1='1.5' x2='12' y2='4' />
+          <line x1='12' y1='20' x2='12' y2='22.5' />
+          <line x1='1.5' y1='12' x2='4' y2='12' />
+          <line x1='20' y1='12' x2='22.5' y2='12' />
         </svg>
       </button>
 
       {!reportMode && (
         <div
-          className="nav-panel"
+          className='nav-panel'
           ref={navPanelRef}
-          style={navPos ? { left: navPos.x, top: navPos.y, right: 'auto' } : undefined}
+          style={
+            navPos
+              ? { left: navPos.x, top: navPos.y, right: 'auto' }
+              : undefined
+          }
         >
           <label
-            className="nav-label"
-            htmlFor="destination-input"
+            className='nav-label'
+            htmlFor='destination-input'
             onPointerDown={handleNavLabelPointerDown}
             onPointerMove={handleNavLabelPointerMove}
             onPointerUp={handleNavLabelPointerUp}
             onPointerCancel={handleNavLabelPointerUp}
           >
-            <span className="nav-label-grip" aria-hidden="true">
+            <span className='nav-label-grip' aria-hidden='true'>
               ⠿
             </span>
             Navigate to
           </label>
-          <div className="nav-row">
+          <div className='nav-row'>
             <input
-              id="destination-input"
-              className="nav-input"
-              type="text"
-              placeholder="Search destination, e.g. Walmart"
+              id='destination-input'
+              className='nav-input'
+              type='text'
+              placeholder='Search destination, e.g. Walmart'
               value={destinationQuery}
               onChange={(e) => setDestinationQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -787,78 +834,88 @@ export default function Map({
               }}
             />
             <select
-              className="nav-mode-select"
+              className='nav-mode-select'
               value={routeMode}
               onChange={(e) => setRouteMode(e.target.value as RouteMode)}
-              aria-label="Navigation mode"
+              aria-label='Navigation mode'
             >
-              <option value="drive">Drive</option>
-              <option value="walk">Walk</option>
-              <option value="bike">Bike</option>
+              <option value='drive'>Drive</option>
+              <option value='walk'>Walk</option>
+              <option value='bike'>Bike</option>
             </select>
             <button
-              className="btn btn-primary"
+              className='btn btn-primary'
               onClick={() => void searchDestinations()}
               disabled={searchingDestinations || navigating}
             >
               {searchingDestinations ? 'Searching…' : 'Search'}
             </button>
             <button
-              className="btn btn-ghost"
+              className='btn btn-ghost'
               onClick={clearNavigation}
               disabled={navigating && routeOptions.length === 0}
             >
               Clear
             </button>
           </div>
-          <div className="map-filter-row">
-            <label className="map-filter-label" htmlFor="map-filter-severity">
+          <div className='map-filter-row'>
+            <label className='map-filter-label' htmlFor='map-filter-severity'>
               Severity
             </label>
             <select
-              id="map-filter-severity"
-              className="map-filter-select"
+              id='map-filter-severity'
+              className='map-filter-select'
               value={severityFilter}
-              onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
+              onChange={(e) =>
+                setSeverityFilter(e.target.value as SeverityFilter)
+              }
             >
-              <option value="high_and_lower">High and lower</option>
-              <option value="medium_and_lower">Medium and lower</option>
-              <option value="low">Low</option>
+              <option value='high_and_lower'>High and lower</option>
+              <option value='medium_and_lower'>Medium and lower</option>
+              <option value='low'>Low</option>
             </select>
 
-            <label className="map-filter-label" htmlFor="map-filter-time">
+            <label className='map-filter-label' htmlFor='map-filter-time'>
               Time
             </label>
             <select
-              id="map-filter-time"
-              className="map-filter-select"
+              id='map-filter-time'
+              className='map-filter-select'
               value={timeFilter}
               onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
             >
-              <option value="all">All time</option>
-              <option value="1h">Last 1h</option>
-              <option value="6h">Last 6h</option>
-              <option value="24h">Last 24h</option>
-              <option value="7d">Last 7d</option>
+              <option value='all'>All time</option>
+              <option value='1h'>Last 1h</option>
+              <option value='6h'>Last 6h</option>
+              <option value='24h'>Last 24h</option>
+              <option value='7d'>Last 7d</option>
             </select>
 
-            <span className="map-filter-count">{filteredPins.length} shown</span>
+            <span className='map-filter-count'>
+              <span className='live-dot' aria-hidden='true' />
+              {filteredPins.length} live
+            </span>
           </div>
-          <label className="map-check-row" htmlFor="force-avoid-pin-areas">
+          <label className='map-check-row' htmlFor='force-avoid-pin-areas'>
             <input
-              id="force-avoid-pin-areas"
-              type="checkbox"
+              id='force-avoid-pin-areas'
+              type='checkbox'
               checked={forceAvoidPinAreas}
               onChange={(e) => setForceAvoidPinAreas(e.target.checked)}
             />
-            <span>Force avoid PinPoint areas (exit first if start is inside)</span>
+            <span>
+              Force avoid PinPoint areas (exit first if start is inside)
+            </span>
           </label>
           {searchResults.length > 0 && (
-            <ul className="nav-results">
+            <ul className='nav-results'>
               {searchResults.map((result, index) => (
-                <li key={`${result.label}-${index}`} className="nav-result-item">
+                <li
+                  key={`${result.label}-${index}`}
+                  className='nav-result-item'
+                >
                   <button
-                    className="nav-result-main"
+                    className='nav-result-main'
                     onClick={() => {
                       setDestinationQuery(result.label);
                       void navigateToDestination(result);
@@ -871,23 +928,27 @@ export default function Map({
               ))}
             </ul>
           )}
-          {destinationLabel && <p className="nav-destination">To: {destinationLabel}</p>}
+          {destinationLabel && (
+            <p className='nav-destination'>To: {destinationLabel}</p>
+          )}
           {routeOptions.length > 0 && (
-            <div className="route-options">
+            <div className='route-options'>
               {routeOptions.map((route) => {
                 const isSelected = route.id === selectedRoute?.id;
                 return (
                   <button
                     key={route.id}
-                    type="button"
+                    type='button'
                     className={`route-option${isSelected ? ' route-option-selected' : ''}`}
                     onClick={() => setSelectedRouteId(route.id)}
                   >
-                    <span className="route-option-title">
+                    <span className='route-option-title'>
                       {route.routeLabel}
                     </span>
-                    <span className="route-option-meta">
-                      {formatDistance(route.distanceM)} • {formatDuration(route.durationS)} • {route.hazards.length} hazard{route.hazards.length === 1 ? '' : 's'}
+                    <span className='route-option-meta'>
+                      {formatDistance(route.distanceM)} •{' '}
+                      {formatDuration(route.durationS)} • {route.hazards.length}{' '}
+                      hazard{route.hazards.length === 1 ? '' : 's'}
                     </span>
                   </button>
                 );
@@ -898,8 +959,9 @@ export default function Map({
       )}
 
       {selectedRoute && !reportMode && (
-        <div className="route-chip" role="status" aria-live="polite">
-          Route ({routeMode}): {formatDistance(selectedRoute.distanceM)} • {formatDuration(selectedRoute.durationS)}
+        <div className='route-chip' role='status' aria-live='polite'>
+          Route ({routeMode}): {formatDistance(selectedRoute.distanceM)} •{' '}
+          {formatDuration(selectedRoute.durationS)}
           {selectedRoute.hazards.length > 0
             ? ` • ⚠ ${selectedRoute.hazards.length} hazard area(s) ahead`
             : ' • No hazard areas on route'}
@@ -908,61 +970,74 @@ export default function Map({
 
       {!reportMode && selectedRoute && selectedRoute.hazards.length > 0 && (
         <button
-          type="button"
-          className="route-chip route-chip-warning route-chip-button"
+          type='button'
+          className='route-chip route-chip-warning route-chip-button'
           onClick={() => setShowRouteHazards((current) => !current)}
           aria-expanded={showRouteHazards}
         >
-          Warning: route passes through {selectedRoute.hazards.length} hazard area(s). Highest severity:{' '}
-          {highestSeverity(selectedRoute.hazards)}. {showRouteHazards ? 'Hide hazards' : 'View hazards'}
+          Warning: route passes through {selectedRoute.hazards.length} hazard
+          area(s). Highest severity: {highestSeverity(selectedRoute.hazards)}.{' '}
+          {showRouteHazards ? 'Hide hazards' : 'View hazards'}
         </button>
       )}
 
-      {!reportMode && selectedRoute && showRouteHazards && selectedRoute.hazards.length > 0 && (
-        <div className="route-hazards-panel" role="status" aria-live="polite">
-          <p className="route-hazards-title">Hazards on selected route</p>
-          <ul className="route-hazards-list">
-            {selectedRoute.hazards.map((hazard) => (
-              <li key={hazard.id}>
-                <button
-                  type="button"
-                  className="route-hazard-item"
-                  onClick={() => focusHazardOnMap(hazard)}
-                >
-                  <span>
-                    {hazard.name?.trim() || 'Unnamed hazard'}
-                    {' • '}
-                    {hazard.severity}
-                  </span>
-                  <span>{Math.round(hazard.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER)}m zone</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {!reportMode &&
+        selectedRoute &&
+        showRouteHazards &&
+        selectedRoute.hazards.length > 0 && (
+          <div className='route-hazards-panel' role='status' aria-live='polite'>
+            <p className='route-hazards-title'>Hazards on selected route</p>
+            <ul className='route-hazards-list'>
+              {selectedRoute.hazards.map((hazard) => (
+                <li key={hazard.id}>
+                  <button
+                    type='button'
+                    className='route-hazard-item'
+                    onClick={() => focusHazardOnMap(hazard)}
+                  >
+                    <span>
+                      {hazard.name?.trim() || 'Unnamed hazard'}
+                      {' • '}
+                      {hazard.severity}
+                    </span>
+                    <span>
+                      {Math.round(
+                        hazard.radius_m * ROUTE_HAZARD_RADIUS_MULTIPLIER,
+                      )}
+                      m zone
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
       {routeError && !reportMode && (
-        <div className="route-chip route-chip-error" role="status" aria-live="polite">
+        <div
+          className='route-chip route-chip-error'
+          role='status'
+          aria-live='polite'
+        >
           {routeError}
         </div>
       )}
 
       {!reportMode && (
-        <button className="btn btn-primary report-fab" onClick={startReport}>
+        <button className='btn btn-primary report-fab' onClick={startReport}>
           📍 Report hazard
         </button>
       )}
 
       {reportMode && (
-        <div className="report-panel">
-          <h3 className="report-title">Report a hazard</h3>
-          <p className="report-hint">Drag the 📍 marker to the exact spot.</p>
+        <div className='report-panel'>
+          <h3 className='report-title'>Report a hazard</h3>
+          <p className='report-hint'>Drag the 📍 marker to the exact spot.</p>
 
-          <label className="report-field">
+          <label className='report-field'>
             Radius: {reportRadius}m
             <input
-              type="range"
+              type='range'
               min={10}
               max={500}
               step={10}
@@ -971,7 +1046,7 @@ export default function Map({
             />
           </label>
 
-          <label className="report-field">
+          <label className='report-field'>
             Severity
             <select
               value={reportSeverity}
@@ -985,10 +1060,10 @@ export default function Map({
             </select>
           </label>
 
-          <label className="report-field">
+          <label className='report-field'>
             Expires in: {reportExpiresHours}h
             <input
-              type="range"
+              type='range'
               min={1}
               max={24}
               step={1}
@@ -997,18 +1072,18 @@ export default function Map({
             />
           </label>
 
-          <label className="report-field">
+          <label className='report-field'>
             Name (optional)
             <input
-              type="text"
+              type='text'
               value={reportName}
               maxLength={80}
-              placeholder="e.g. Broken glass"
+              placeholder='e.g. Broken glass'
               onChange={(e) => setReportName(e.target.value)}
             />
           </label>
 
-          <label className="report-field">
+          <label className='report-field'>
             Description (optional)
             <textarea
               value={reportDescription}
@@ -1019,25 +1094,25 @@ export default function Map({
             />
           </label>
 
-          {reportError && <p className="error-msg">{reportError}</p>}
+          {reportError && <p className='error-msg'>{reportError}</p>}
 
           {!user && (
-            <p className="report-anon-hint">
+            <p className='report-anon-hint'>
               Reporting anonymously — this pin expires in 1 hour. Sign in for
               persistent pins and voting.
             </p>
           )}
 
-          <div className="report-actions">
+          <div className='report-actions'>
             <button
-              className="btn btn-primary"
+              className='btn btn-primary'
               onClick={submitReport}
               disabled={submitting}
             >
               {submitting ? 'Dropping…' : 'Drop pin'}
             </button>
             <button
-              className="btn btn-ghost"
+              className='btn btn-ghost'
               onClick={cancelReport}
               disabled={submitting}
             >
@@ -1091,7 +1166,10 @@ function timeFilterToMs(filter: TimeFilter): number | null {
   return null;
 }
 
-function matchesSeverityFilter(severity: Severity, filter: SeverityFilter): boolean {
+function matchesSeverityFilter(
+  severity: Severity,
+  filter: SeverityFilter,
+): boolean {
   if (filter === 'high_and_lower') {
     return true;
   }
@@ -1164,7 +1242,8 @@ async function fetchRoutesForMode(
         })),
       );
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Route request failed');
+      lastError =
+        error instanceof Error ? error : new Error('Route request failed');
     }
   }
 
@@ -1183,14 +1262,21 @@ async function fetchRoutesWithAvoidance(
     return baseRoutes;
   }
 
-  const rankedBase = rankRouteOptions(baseRoutes, pins, { forceAvoidPinAreas: true });
+  const rankedBase = rankRouteOptions(baseRoutes, pins, {
+    forceAvoidPinAreas: true,
+  });
   const primaryRoute = rankedBase[0];
 
   if (!primaryRoute || primaryRoute.hazards.length === 0) {
     return baseRoutes;
   }
 
-  const waypoints = computeAvoidanceWaypoints(start, destination, primaryRoute.path, primaryRoute.hazards);
+  const waypoints = computeAvoidanceWaypoints(
+    start,
+    destination,
+    primaryRoute.path,
+    primaryRoute.hazards,
+  );
   if (waypoints.length === 0) {
     return baseRoutes;
   }
@@ -1200,7 +1286,11 @@ async function fetchRoutesWithAvoidance(
   for (const waypoint of waypoints.slice(0, 4)) {
     try {
       const firstLegRoutes = await fetchRoutesForMode(mode, start, waypoint);
-      const secondLegRoutes = await fetchRoutesForMode(mode, waypoint, destination);
+      const secondLegRoutes = await fetchRoutesForMode(
+        mode,
+        waypoint,
+        destination,
+      );
       const firstLeg = firstLegRoutes[0];
       const secondLeg = secondLegRoutes[0];
 
@@ -1248,14 +1338,20 @@ function routeSignature(coordinates: [number, number][]): string {
   return samples.join('|');
 }
 
-function combineRouteSegments(first: RouteResult, second: RouteResult): RouteResult {
+function combineRouteSegments(
+  first: RouteResult,
+  second: RouteResult,
+): RouteResult {
   const firstCoordinates = [...first.coordinates];
   const secondCoordinates = [...second.coordinates];
 
   if (firstCoordinates.length > 0 && secondCoordinates.length > 0) {
     const [firstLng, firstLat] = secondCoordinates[0];
     const [lastLng, lastLat] = firstCoordinates[firstCoordinates.length - 1];
-    if (Math.abs(firstLat - lastLat) < 1e-6 && Math.abs(firstLng - lastLng) < 1e-6) {
+    if (
+      Math.abs(firstLat - lastLat) < 1e-6 &&
+      Math.abs(firstLng - lastLng) < 1e-6
+    ) {
       secondCoordinates.shift();
     }
   }
@@ -1274,7 +1370,9 @@ function computeAvoidanceWaypoints(
   hazards: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
 ): Array<{ lat: number; lng: number }> {
   const waypoints: Array<{ lat: number; lng: number }> = [];
-  const startOverlappingHazards = hazards.filter((hazard) => pointInsidePinArea(start.lat, start.lng, hazard));
+  const startOverlappingHazards = hazards.filter((hazard) =>
+    pointInsidePinArea(start.lat, start.lng, hazard),
+  );
 
   for (const hazard of startOverlappingHazards) {
     waypoints.push(exitPointForHazard(start, destination, hazard));
@@ -1299,10 +1397,20 @@ function pickMainHazardOnPath(
 
   const [startLat, startLng] = path[0];
   let selected = hazards[0];
-  let minDistance = haversineMeters(startLat, startLng, selected.lat, selected.lng);
+  let minDistance = haversineMeters(
+    startLat,
+    startLng,
+    selected.lat,
+    selected.lng,
+  );
 
   for (const hazard of hazards.slice(1)) {
-    const distance = haversineMeters(startLat, startLng, hazard.lat, hazard.lng);
+    const distance = haversineMeters(
+      startLat,
+      startLng,
+      hazard.lat,
+      hazard.lng,
+    );
     if (distance < minDistance) {
       minDistance = distance;
       selected = hazard;
@@ -1319,10 +1427,18 @@ function exitPointForHazard(
 ): { lat: number; lng: number } {
   const away = normalizeVector(
     metersVectorFrom(hazard.lat, hazard.lng, start.lat, start.lng),
-    normalizeVector(metersVectorFrom(hazard.lat, hazard.lng, destination.lat, destination.lng), {
-      east: 1,
-      north: 0,
-    }),
+    normalizeVector(
+      metersVectorFrom(
+        hazard.lat,
+        hazard.lng,
+        destination.lat,
+        destination.lng,
+      ),
+      {
+        east: 1,
+        north: 0,
+      },
+    ),
   );
 
   return offsetLatLng(hazard.lat, hazard.lng, away, hazard.radius_m + 180);
@@ -1333,10 +1449,13 @@ function sideStepWaypoints(
   start: { lat: number; lng: number },
   destination: { lat: number; lng: number },
 ): Array<{ lat: number; lng: number }> {
-  const forward = normalizeVector(metersVectorFrom(start.lat, start.lng, destination.lat, destination.lng), {
-    east: 1,
-    north: 0,
-  });
+  const forward = normalizeVector(
+    metersVectorFrom(start.lat, start.lng, destination.lat, destination.lng),
+    {
+      east: 1,
+      north: 0,
+    },
+  );
 
   const left = { east: -forward.north, north: forward.east };
   const right = { east: forward.north, north: -forward.east };
@@ -1402,7 +1521,9 @@ function offsetLatLng(
   };
 }
 
-function dedupeWaypoints(points: Array<{ lat: number; lng: number }>): Array<{ lat: number; lng: number }> {
+function dedupeWaypoints(
+  points: Array<{ lat: number; lng: number }>,
+): Array<{ lat: number; lng: number }> {
   const seen = new Set<string>();
   const unique: Array<{ lat: number; lng: number }> = [];
 
@@ -1425,13 +1546,16 @@ function rankRouteOptions(
   options: { forceAvoidPinAreas?: boolean } = {},
 ): RouteOption[] {
   const scoredRoutes = routes.map((route) => {
-    const path = route.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]);
+    const path = route.coordinates.map(
+      ([lng, lat]) => [lat, lng] as [number, number],
+    );
     const hazards = pins.filter((pin) => routeIntersectsPinArea(path, pin));
 
     const [startLat, startLng] = path[0] ?? [NaN, NaN];
-    const startOverlappingPins = Number.isFinite(startLat) && Number.isFinite(startLng)
-      ? pins.filter((pin) => pointInsidePinArea(startLat, startLng, pin))
-      : [];
+    const startOverlappingPins =
+      Number.isFinite(startLat) && Number.isFinite(startLng)
+        ? pins.filter((pin) => pointInsidePinArea(startLat, startLng, pin))
+        : [];
     const startsInsidePinArea = startOverlappingPins.length > 0;
     const exitDistanceM = startsInsidePinArea
       ? distanceToExitPinAreas(path, startOverlappingPins)
@@ -1491,7 +1615,9 @@ function rankRouteOptions(
       },
     ];
 
-    const backupRoute = rankedByAvoidance.find((route) => route.id !== primaryRoute.id);
+    const backupRoute = rankedByAvoidance.find(
+      (route) => route.id !== primaryRoute.id,
+    );
     if (backupRoute) {
       preferredRoutes.push({
         ...backupRoute,
@@ -1558,7 +1684,9 @@ function distanceToExitPinAreas(
     const [lat, lng] = path[index];
     traveledMeters += haversineMeters(prevLat, prevLng, lat, lng);
 
-    const stillInside = startOverlappingPins.some((pin) => pointInsidePinArea(lat, lng, pin));
+    const stillInside = startOverlappingPins.some((pin) =>
+      pointInsidePinArea(lat, lng, pin),
+    );
     if (!stillInside) {
       return traveledMeters;
     }
