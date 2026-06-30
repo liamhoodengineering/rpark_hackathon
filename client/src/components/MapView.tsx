@@ -1,69 +1,32 @@
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { pinsApi } from '../api/pins.js';
-import type { Pin, WatchArea } from '../types/domain.js';
+import type { Pin, Severity, WatchArea } from '../types/domain.js';
 
-const SEVERITY_COLOR_EXPR: mapboxgl.Expression = [
-  'match',
-  ['get', 'severity'],
-  'Low', '#22c55e',
-  'Medium', '#f97316',
-  'High', '#ef4444',
-  '#94a3b8',
-];
+const CARTO_DARK_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-function makeCirclePolygon(lng: number, lat: number, radiusM: number, steps = 64): number[][] {
-  const R = 6_371_000;
-  const latRad = (lat * Math.PI) / 180;
-  const coords: number[][] = [];
-  for (let i = 0; i <= steps; i++) {
-    const angle = (i / steps) * 2 * Math.PI;
-    const dLat = ((radiusM * Math.cos(angle)) / R) * (180 / Math.PI);
-    const dLng = ((radiusM * Math.sin(angle)) / R / Math.cos(latRad)) * (180 / Math.PI);
-    coords.push([lng + dLng, lat + dLat]);
+function severityColor(severity: Severity | string): string {
+  switch (severity) {
+    case 'Low':
+      return '#22c55e';
+    case 'Medium':
+      return '#f97316';
+    case 'High':
+      return '#ef4444';
+    default:
+      return '#94a3b8';
   }
-  return coords;
 }
 
-function pinsToGeoJSON(pins: Pin[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: pins.map((pin) => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [pin.lng, pin.lat] } as GeoJSON.Point,
-      properties: { ...pin },
-    })),
-  };
-}
-
-function radiiToGeoJSON(pins: Pin[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: pins.map((pin) => ({
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [makeCirclePolygon(pin.lng, pin.lat, pin.radius_m)],
-      } as GeoJSON.Polygon,
-      properties: { severity: pin.severity, id: pin.id },
-    })),
-  };
-}
-
-function watchAreasToGeoJSON(areas: WatchArea[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: areas.map((area) => ({
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [makeCirclePolygon(area.lng, area.lat, area.radius_m)],
-      } as GeoJSON.Polygon,
-      properties: { id: area.id },
-    })),
-  };
-}
+const PENDING_MARKER_ICON = L.divIcon({
+  className: 'pending-pin-marker',
+  html: '<div style="width:18px;height:18px;border-radius:50% 50% 50% 0;background:#3b82f6;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 18],
+});
 
 export interface MapViewHandle {
   refreshPins: () => void;
@@ -81,8 +44,13 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const pendingMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const pendingMarkerRef = useRef<L.Marker | null>(null);
+
+  // Layer groups for the dynamic geometry we redraw on data changes
+  const watchAreasLayerRef = useRef<L.LayerGroup | null>(null);
+  const pinRadiiLayerRef = useRef<L.LayerGroup | null>(null);
+  const pinsLayerRef = useRef<L.LayerGroup | null>(null);
 
   // Keep latest callbacks/props in refs so map event listeners always see current values
   const onPinSelectRef = useRef(onPinSelect);
@@ -93,11 +61,27 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   useEffect(() => { onPinSelectRef.current = onPinSelect; }, [onPinSelect]);
   useEffect(() => { onLocationPickedRef.current = onLocationPicked; }, [onLocationPicked]);
 
+  function renderWatchAreas(areas: WatchArea[]) {
+    const layer = watchAreasLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    for (const area of areas) {
+      L.circle([area.lat, area.lng], {
+        radius: area.radius_m,
+        color: '#60a5fa',
+        weight: 2,
+        dashArray: '3 3',
+        fill: false,
+        interactive: false,
+      }).addTo(layer);
+    }
+  }
+
   useEffect(() => {
     reportModeRef.current = reportMode;
     const map = mapRef.current;
     if (!map) return;
-    map.getCanvas().style.cursor = reportMode ? 'crosshair' : '';
+    map.getContainer().style.cursor = reportMode ? 'crosshair' : '';
     if (!reportMode) {
       pendingMarkerRef.current?.remove();
       pendingMarkerRef.current = null;
@@ -106,16 +90,12 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
   useEffect(() => {
     watchAreasRef.current = watchAreas;
-    const map = mapRef.current;
-    if (!map?.isStyleLoaded()) return;
-    (map.getSource('watch-areas-source') as mapboxgl.GeoJSONSource | undefined)
-      ?.setData(watchAreasToGeoJSON(watchAreas));
+    if (watchAreasLayerRef.current) renderWatchAreas(watchAreas);
   }, [watchAreas]);
 
-  function fetchAndRender(map: mapboxgl.Map) {
+  function fetchAndRender(map: L.Map) {
     const center = map.getCenter();
     const bounds = map.getBounds();
-    if (!bounds) return;
     const ne = bounds.getNorthEast();
     const sw = bounds.getSouthWest();
     const latSpan = Math.abs(ne.lat - sw.lat) / 2;
@@ -123,10 +103,46 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const radiusM = Math.round(Math.sqrt(latSpan ** 2 + lngSpan ** 2) * 111_320);
 
     pinsApi.list(center.lat, center.lng, radiusM).then((pins) => {
-      (map.getSource('pins-source') as mapboxgl.GeoJSONSource | undefined)
-        ?.setData(pinsToGeoJSON(pins));
-      (map.getSource('pin-radii-source') as mapboxgl.GeoJSONSource | undefined)
-        ?.setData(radiiToGeoJSON(pins));
+      const radiiLayer = pinRadiiLayerRef.current;
+      const pinsLayer = pinsLayerRef.current;
+      if (!radiiLayer || !pinsLayer) return;
+
+      radiiLayer.clearLayers();
+      pinsLayer.clearLayers();
+
+      for (const pin of pins) {
+        const color = severityColor(pin.severity);
+
+        // Hazard radius
+        L.circle([pin.lat, pin.lng], {
+          radius: pin.radius_m,
+          color,
+          weight: 1.5,
+          fillColor: color,
+          fillOpacity: 0.08,
+          interactive: false,
+        }).addTo(radiiLayer);
+
+        // Pin dot
+        const marker = L.circleMarker([pin.lat, pin.lng], {
+          radius: 10,
+          color: '#fff',
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 1,
+        }).addTo(pinsLayer);
+
+        marker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          onPinSelectRef.current(pin);
+        });
+        marker.on('mouseover', () => {
+          if (!reportModeRef.current) map.getContainer().style.cursor = 'pointer';
+        });
+        marker.on('mouseout', () => {
+          if (!reportModeRef.current) map.getContainer().style.cursor = '';
+        });
+      }
     }).catch(() => null);
   }
 
@@ -139,145 +155,63 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
-    if (token) mapboxgl.accessToken = token;
-
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: [-87.6298, 41.8781],
+    const map = L.map(containerRef.current, {
+      center: [41.8781, -87.6298],
       zoom: 14,
+      zoomControl: true,
     });
 
+    L.tileLayer(CARTO_DARK_URL, {
+      attribution: CARTO_ATTRIBUTION,
+      maxZoom: 20,
+    }).addTo(map);
+
     mapRef.current = map;
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    map.addControl(new mapboxgl.GeolocateControl({ trackUserLocation: false }), 'top-right');
+
+    // Layer groups (rendered beneath markers in add order)
+    watchAreasLayerRef.current = L.layerGroup().addTo(map);
+    pinRadiiLayerRef.current = L.layerGroup().addTo(map);
+    pinsLayerRef.current = L.layerGroup().addTo(map);
+
+    renderWatchAreas(watchAreasRef.current);
 
     // Fly to user's position on first load
     navigator.geolocation?.getCurrentPosition((pos) => {
-      map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 15 });
+      map.flyTo([pos.coords.latitude, pos.coords.longitude], 15);
     });
 
-    map.on('load', () => {
-      map.addSource('watch-areas-source', {
-        type: 'geojson',
-        data: watchAreasToGeoJSON(watchAreasRef.current),
-      });
-      map.addSource('pin-radii-source', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-      map.addSource('pins-source', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-
-      // Watch area dashed outline
-      map.addLayer({
-        id: 'watch-areas-line',
-        type: 'line',
-        source: 'watch-areas-source',
-        paint: {
-          'line-color': '#60a5fa',
-          'line-width': 2,
-          'line-dasharray': [3, 3],
-        },
-      });
-
-      // Pin radius fill
-      map.addLayer({
-        id: 'pin-radii-fill',
-        type: 'fill',
-        source: 'pin-radii-source',
-        paint: {
-          'fill-color': SEVERITY_COLOR_EXPR,
-          'fill-opacity': 0.08,
-        },
-      });
-
-      // Pin radius border
-      map.addLayer({
-        id: 'pin-radii-line',
-        type: 'line',
-        source: 'pin-radii-source',
-        paint: {
-          'line-color': SEVERITY_COLOR_EXPR,
-          'line-width': 1.5,
-        },
-      });
-
-      // Pin dots
-      map.addLayer({
-        id: 'pins-circle',
-        type: 'circle',
-        source: 'pins-source',
-        paint: {
-          'circle-radius': 10,
-          'circle-color': SEVERITY_COLOR_EXPR,
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#fff',
-        },
-      });
-
-      fetchAndRender(map);
-    });
-
-    map.on('moveend', () => fetchAndRender(map));
-
-    // Click a pin marker
-    map.on('click', 'pins-circle', (e) => {
-      e.originalEvent.stopPropagation();
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const p = feature.properties as Record<string, unknown>;
-      const pin: Pin = {
-        id: p.id as string,
-        reporter_id: (p.reporter_id as string | null) ?? null,
-        lat: p.lat as number,
-        lng: p.lng as number,
-        name: (p.name as string | null) ?? null,
-        description: (p.description as string | null) ?? null,
-        severity: p.severity as Pin['severity'],
-        radius_m: p.radius_m as number,
-        upvotes: p.upvotes as number,
-        downvotes: p.downvotes as number,
-        status: p.status as Pin['status'],
-        expires_at: (p.expires_at as string | null) ?? null,
-        created_at: p.created_at as string,
-      };
-      onPinSelectRef.current(pin);
-    });
-
-    // Click map canvas (report mode: place a marker)
-    map.on('click', (e) => {
+    // Click map canvas (report mode: place a draggable marker)
+    map.on('click', (e: L.LeafletMouseEvent) => {
       if (!reportModeRef.current) return;
-      const { lat, lng } = e.lngLat;
+      const { lat, lng } = e.latlng;
 
       pendingMarkerRef.current?.remove();
-      const marker = new mapboxgl.Marker({ color: '#3b82f6', draggable: true })
-        .setLngLat([lng, lat])
-        .addTo(map);
+      const marker = L.marker([lat, lng], {
+        draggable: true,
+        icon: PENDING_MARKER_ICON,
+      }).addTo(map);
       pendingMarkerRef.current = marker;
 
       onLocationPickedRef.current?.(lat, lng);
 
       marker.on('dragend', () => {
-        const pos = marker.getLngLat();
+        const pos = marker.getLatLng();
         onLocationPickedRef.current?.(pos.lat, pos.lng);
       });
     });
 
-    map.on('mouseenter', 'pins-circle', () => {
-      if (!reportModeRef.current) map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', 'pins-circle', () => {
-      if (!reportModeRef.current) map.getCanvas().style.cursor = '';
-    });
+    map.on('moveend', () => fetchAndRender(map));
+
+    fetchAndRender(map);
 
     return () => {
       pendingMarkerRef.current?.remove();
+      pendingMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
+      watchAreasLayerRef.current = null;
+      pinRadiiLayerRef.current = null;
+      pinsLayerRef.current = null;
     };
   }, []); // intentionally empty — map is initialized once
 
