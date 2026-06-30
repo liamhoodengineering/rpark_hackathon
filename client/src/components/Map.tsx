@@ -1204,19 +1204,22 @@ function routeUrlCandidates(
 
   if (mode === 'walk') {
     return [
-      `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${suffix}`,
       `https://router.project-osrm.org/route/v1/walking/${suffix}`,
+      `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${suffix}`,
     ];
   }
 
   if (mode === 'bike') {
     return [
-      `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${suffix}`,
       `https://router.project-osrm.org/route/v1/cycling/${suffix}`,
+      `https://routing.openstreetmap.de/routed-bike/route/v1/bike/${suffix}`,
     ];
   }
 
-  return [`https://router.project-osrm.org/route/v1/driving/${suffix}`];
+  return [
+    `https://router.project-osrm.org/route/v1/driving/${suffix}`,
+    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${suffix}`,
+  ];
 }
 
 async function fetchRoutesForMode(
@@ -1241,9 +1244,11 @@ async function fetchRoutesForMode(
         }>;
       };
 
-      const routes = (payload.routes ?? []).filter(
-        (route) => route.geometry?.coordinates?.length,
-      );
+      const routes = (payload.routes ?? [])
+        .filter((route) => route.geometry?.coordinates?.length)
+        .filter((route) =>
+          isRoutePlausibleForMode(mode, route.distance, route.duration),
+        );
 
       if (routes.length === 0) {
         throw new Error('No route found for this destination.');
@@ -1265,6 +1270,34 @@ async function fetchRoutesForMode(
   throw lastError ?? new Error('Failed to fetch route for this mode.');
 }
 
+function isRoutePlausibleForMode(
+  mode: RouteMode,
+  distanceM: number,
+  durationS: number,
+): boolean {
+  if (
+    !Number.isFinite(distanceM) ||
+    !Number.isFinite(durationS) ||
+    durationS <= 0
+  ) {
+    return false;
+  }
+
+  const speedMps = distanceM / durationS;
+
+  if (mode === 'walk') {
+    // ~8 km/h upper bound to reject mislabeled driving durations.
+    return speedMps <= 2.25;
+  }
+
+  if (mode === 'bike') {
+    // ~45 km/h upper bound for urban bike routing sanity.
+    return speedMps <= 12.5;
+  }
+
+  return speedMps >= 1.5;
+}
+
 async function fetchRoutesWithAvoidance(
   mode: RouteMode,
   start: { lat: number; lng: number },
@@ -1281,43 +1314,84 @@ async function fetchRoutesWithAvoidance(
     forceAvoidPinAreas: true,
   });
   const primaryRoute = rankedBase[0];
+  const baselineDistanceM = primaryRoute?.distanceM ?? Number.POSITIVE_INFINITY;
 
   if (!primaryRoute || primaryRoute.hazards.length === 0) {
     return baseRoutes;
   }
 
-  const waypoints = computeAvoidanceWaypoints(
+  const waypointPlans = computeAvoidanceWaypointPlans(
+    mode,
     start,
     destination,
     primaryRoute.path,
     primaryRoute.hazards,
   );
-  if (waypoints.length === 0) {
+  if (waypointPlans.length === 0) {
     return baseRoutes;
   }
 
   const detourRoutes: RouteResult[] = [];
 
-  for (const waypoint of waypoints.slice(0, 4)) {
+  for (const waypoints of waypointPlans.slice(0, 6)) {
     try {
-      const firstLegRoutes = await fetchRoutesForMode(mode, start, waypoint);
-      const secondLegRoutes = await fetchRoutesForMode(
+      const route = await fetchRouteViaWaypoints(
         mode,
-        waypoint,
+        start,
         destination,
+        waypoints,
+        pins,
       );
-      const firstLeg = firstLegRoutes[0];
-      const secondLeg = secondLegRoutes[0];
-
-      if (firstLeg && secondLeg) {
-        detourRoutes.push(combineRouteSegments(firstLeg, secondLeg));
+      if (route) {
+        const maxDetourFactor = mode === 'walk' ? 1.3 : 1.6;
+        if (route.distance <= baselineDistanceM * maxDetourFactor) {
+          detourRoutes.push(route);
+        }
       }
     } catch {
-      // Keep trying other waypoints if one detour request fails.
+      // Keep trying other detours if one waypoint plan fails.
     }
   }
 
   return dedupeRoutes([...baseRoutes, ...detourRoutes]);
+}
+
+async function fetchRouteViaWaypoints(
+  mode: RouteMode,
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  waypoints: Array<{ lat: number; lng: number }>,
+  pins: Pin[],
+): Promise<RouteResult | null> {
+  const points = [start, ...waypoints, destination];
+  let combinedRoute: RouteResult | null = null;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const legStart = points[index - 1];
+    const legEnd = points[index];
+    const legRoutes = await fetchRoutesForMode(mode, legStart, legEnd);
+    const bestLeg = rankRouteOptions(legRoutes, pins, {
+      forceAvoidPinAreas: true,
+    })[0];
+
+    if (!bestLeg) {
+      return null;
+    }
+
+    const legRoute: RouteResult = {
+      distance: bestLeg.distanceM,
+      duration: bestLeg.durationS,
+      coordinates: bestLeg.path.map(
+        ([lat, lng]) => [lng, lat] as [number, number],
+      ),
+    };
+
+    combinedRoute = combinedRoute
+      ? combineRouteSegments(combinedRoute, legRoute)
+      : legRoute;
+  }
+
+  return combinedRoute;
 }
 
 function dedupeRoutes(routes: RouteResult[]): RouteResult[] {
@@ -1378,61 +1452,64 @@ function combineRouteSegments(
   };
 }
 
-function computeAvoidanceWaypoints(
+function computeAvoidanceWaypointPlans(
+  mode: RouteMode,
   start: { lat: number; lng: number },
   destination: { lat: number; lng: number },
   primaryPath: Array<[number, number]>,
   hazards: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
-): Array<{ lat: number; lng: number }> {
-  const waypoints: Array<{ lat: number; lng: number }> = [];
+): Array<Array<{ lat: number; lng: number }>> {
+  const plans: Array<Array<{ lat: number; lng: number }>> = [];
   const startOverlappingHazards = hazards.filter((hazard) =>
     pointInsidePinArea(start.lat, start.lng, hazard),
   );
 
   for (const hazard of startOverlappingHazards) {
-    waypoints.push(exitPointForHazard(start, destination, hazard));
+    plans.push([exitPointForHazard(start, destination, hazard)]);
   }
 
-  const mainHazard = pickMainHazardOnPath(primaryPath, hazards);
-  if (mainHazard) {
-    const aroundPoints = sideStepWaypoints(mainHazard, start, destination);
-    waypoints.push(...aroundPoints);
+  // Walking routes are especially sensitive to synthetic waypoint detours.
+  // Keep walk mode conservative: only enforce "exit first" when starting inside.
+  if (mode === 'walk') {
+    return dedupeWaypointPlans(plans);
   }
 
-  return dedupeWaypoints(waypoints);
+  const blockingHazards = pickBlockingHazardsOnPath(
+    primaryPath,
+    hazards,
+    start,
+    3,
+  );
+  for (const hazard of blockingHazards) {
+    const sidePlans = sideStepWaypointPlans(hazard, start, destination);
+    plans.push(...sidePlans);
+  }
+
+  return dedupeWaypointPlans(plans);
 }
 
-function pickMainHazardOnPath(
+function pickBlockingHazardsOnPath(
   path: Array<[number, number]>,
   hazards: Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>>,
-): Pick<Pin, 'lat' | 'lng' | 'radius_m'> | null {
+  start: { lat: number; lng: number },
+  limit: number,
+): Array<Pick<Pin, 'lat' | 'lng' | 'radius_m'>> {
   if (path.length === 0 || hazards.length === 0) {
-    return null;
+    return [];
   }
 
-  const [startLat, startLng] = path[0];
-  let selected = hazards[0];
-  let minDistance = haversineMeters(
-    startLat,
-    startLng,
-    selected.lat,
-    selected.lng,
-  );
-
-  for (const hazard of hazards.slice(1)) {
-    const distance = haversineMeters(
-      startLat,
-      startLng,
-      hazard.lat,
-      hazard.lng,
-    );
-    if (distance < minDistance) {
-      minDistance = distance;
-      selected = hazard;
-    }
-  }
-
-  return selected;
+  return [...hazards]
+    .filter((hazard) => !pointInsidePinArea(start.lat, start.lng, hazard))
+    .sort((left, right) => {
+      const leftDistance = minDistanceFromPathToPoint(path, left.lat, left.lng);
+      const rightDistance = minDistanceFromPathToPoint(
+        path,
+        right.lat,
+        right.lng,
+      );
+      return leftDistance - rightDistance;
+    })
+    .slice(0, limit);
 }
 
 function exitPointForHazard(
@@ -1459,11 +1536,11 @@ function exitPointForHazard(
   return offsetLatLng(hazard.lat, hazard.lng, away, hazard.radius_m + 180);
 }
 
-function sideStepWaypoints(
+function sideStepWaypointPlans(
   hazard: Pick<Pin, 'lat' | 'lng' | 'radius_m'>,
   start: { lat: number; lng: number },
   destination: { lat: number; lng: number },
-): Array<{ lat: number; lng: number }> {
+): Array<Array<{ lat: number; lng: number }>> {
   const forward = normalizeVector(
     metersVectorFrom(start.lat, start.lng, destination.lat, destination.lng),
     {
@@ -1474,12 +1551,71 @@ function sideStepWaypoints(
 
   const left = { east: -forward.north, north: forward.east };
   const right = { east: forward.north, north: -forward.east };
-  const detourRadius = hazard.radius_m + 180;
+  const detourRadius = hazard.radius_m + Math.max(220, hazard.radius_m * 0.85);
+  const forwardShift = Math.max(140, hazard.radius_m * 0.75);
 
-  return [
-    offsetLatLng(hazard.lat, hazard.lng, left, detourRadius),
-    offsetLatLng(hazard.lat, hazard.lng, right, detourRadius),
-  ];
+  const leftA = offsetLatLng(
+    hazard.lat,
+    hazard.lng,
+    combineVectors(left, scaleVector(forward, -0.55)),
+    detourRadius,
+  );
+  const leftB = offsetLatLng(
+    hazard.lat,
+    hazard.lng,
+    combineVectors(left, scaleVector(forward, 0.55)),
+    detourRadius,
+  );
+  const rightA = offsetLatLng(
+    hazard.lat,
+    hazard.lng,
+    combineVectors(right, scaleVector(forward, -0.55)),
+    detourRadius,
+  );
+  const rightB = offsetLatLng(
+    hazard.lat,
+    hazard.lng,
+    combineVectors(right, scaleVector(forward, 0.55)),
+    detourRadius,
+  );
+
+  const leftSingle = offsetLatLng(
+    hazard.lat,
+    hazard.lng,
+    left,
+    detourRadius + forwardShift,
+  );
+  const rightSingle = offsetLatLng(
+    hazard.lat,
+    hazard.lng,
+    right,
+    detourRadius + forwardShift,
+  );
+
+  return [[leftA, leftB], [rightA, rightB], [leftSingle], [rightSingle]];
+}
+
+function scaleVector(
+  vector: { east: number; north: number },
+  factor: number,
+): { east: number; north: number } {
+  return {
+    east: vector.east * factor,
+    north: vector.north * factor,
+  };
+}
+
+function combineVectors(
+  first: { east: number; north: number },
+  second: { east: number; north: number },
+): { east: number; north: number } {
+  return normalizeVector(
+    {
+      east: first.east + second.east,
+      north: first.north + second.north,
+    },
+    first,
+  );
 }
 
 function metersVectorFrom(
@@ -1555,6 +1691,33 @@ function dedupeWaypoints(
   return unique;
 }
 
+function dedupeWaypointPlans(
+  plans: Array<Array<{ lat: number; lng: number }>>,
+): Array<Array<{ lat: number; lng: number }>> {
+  const seen = new Set<string>();
+  const unique: Array<Array<{ lat: number; lng: number }>> = [];
+
+  for (const plan of plans) {
+    const normalizedPlan = dedupeWaypoints(plan);
+    if (normalizedPlan.length === 0) {
+      continue;
+    }
+
+    const key = normalizedPlan
+      .map((point) => `${point.lat.toFixed(5)}:${point.lng.toFixed(5)}`)
+      .join('|');
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(normalizedPlan);
+  }
+
+  return unique;
+}
+
 function rankRouteOptions(
   routes: RouteResult[],
   pins: Pin[],
@@ -1576,11 +1739,17 @@ function rankRouteOptions(
       ? distanceToExitPinAreas(path, startOverlappingPins)
       : 0;
 
-    const severityPenalty = hazards.reduce(
+    const avoidableHazards =
+      Number.isFinite(startLat) && Number.isFinite(startLng)
+        ? hazards.filter((pin) => !pointInsidePinArea(startLat, startLng, pin))
+        : hazards;
+
+    const severityPenalty = avoidableHazards.reduce(
       (total, pin) => total + hazardPenaltyForSeverity(pin.severity),
       0,
     );
-    const score = route.duration + severityPenalty * 60 + hazards.length * 45;
+    const score =
+      route.duration + severityPenalty * 120 + avoidableHazards.length * 220;
 
     return {
       id: routeSignature(route.coordinates),
@@ -1592,6 +1761,7 @@ function rankRouteOptions(
       routeLabel: 'Route',
       startsInsidePinArea,
       exitDistanceM,
+      avoidableHazardCount: avoidableHazards.length,
     };
   });
 
@@ -1607,8 +1777,8 @@ function rankRouteOptions(
         }
       }
 
-      if (left.hazards.length !== right.hazards.length) {
-        return left.hazards.length - right.hazards.length;
+      if (left.avoidableHazardCount !== right.avoidableHazardCount) {
+        return left.avoidableHazardCount - right.avoidableHazardCount;
       }
 
       if (left.score !== right.score) {
@@ -1747,6 +1917,43 @@ function routeIntersectsPinArea(
   }
 
   return false;
+}
+
+function minDistanceFromPathToPoint(
+  path: Array<[number, number]>,
+  pointLat: number,
+  pointLng: number,
+): number {
+  if (path.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  if (path.length === 1) {
+    const [lat, lng] = path[0];
+    return haversineMeters(pointLat, pointLng, lat, lng);
+  }
+
+  let minDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = 1; index < path.length; index += 1) {
+    const [startLat, startLng] = path[index - 1];
+    const [endLat, endLng] = path[index];
+
+    const distance = pointToSegmentMeters(
+      pointLat,
+      pointLng,
+      startLat,
+      startLng,
+      endLat,
+      endLng,
+    );
+
+    if (distance < minDistance) {
+      minDistance = distance;
+    }
+  }
+
+  return minDistance;
 }
 
 function distanceFromPointToRouteMeters(
