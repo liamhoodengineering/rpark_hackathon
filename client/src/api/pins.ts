@@ -14,6 +14,7 @@ export interface CreatePinBody {
   description?: string | null;
   severity: Severity;
   radius_m: number;
+  expires_in_hours?: number;
 }
 
 export const pinsApi = {

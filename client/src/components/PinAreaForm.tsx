@@ -16,6 +16,7 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
   const [lng, setLng] = useState(defaultLng?.toFixed(6) ?? '');
   const [radiusM, setRadiusM] = useState(100);
   const [severity, setSeverity] = useState<Severity>('Low');
+  const [expiresInHours, setExpiresInHours] = useState(24);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -35,6 +36,7 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
         lng: lngNum,
         radius_m: radiusM,
         severity,
+        expires_in_hours: expiresInHours,
       });
       onCreated(pin);
     } catch (err) {
@@ -97,6 +99,18 @@ export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: Pin
             </option>
           ))}
         </select>
+      </label>
+
+      <label>
+        Expires in: {expiresInHours}h
+        <input
+          type="range"
+          min={1}
+          max={24}
+          step={1}
+          value={expiresInHours}
+          onChange={(e) => setExpiresInHours(Number(e.target.value))}
+        />
       </label>
 
       <div className="form-actions">

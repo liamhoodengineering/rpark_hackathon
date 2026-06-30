@@ -44,6 +44,7 @@ const createPinSchema = z.object({
   description: z.string().trim().max(1000).nullable().optional(),
   severity: z.enum(['Low', 'Medium', 'High']),
   radius_m: z.number().int().min(10).max(500),
+  expires_in_hours: z.coerce.number().int().min(1).max(24).optional(),
 });
 
 const updatePinSchema = z.object({
@@ -144,6 +145,12 @@ router.post(
         enforceAnonymousCooldown(req);
       }
 
+      const expiresAt = body.expires_in_hours
+        ? new Date(Date.now() + body.expires_in_hours * 60 * 60 * 1000).toISOString()
+        : isAnonymous
+          ? new Date(Date.now() + ANON_PIN_TTL_MS).toISOString()
+          : null;
+
       const pin = await PinService.create({
         reporter_id: req.auth?.sub ?? null,
         lat: body.lat,
@@ -152,9 +159,7 @@ router.post(
         description: normalizeOptionalText(body.description),
         severity: body.severity,
         radius_m: body.radius_m,
-        expires_at: isAnonymous
-          ? new Date(Date.now() + ANON_PIN_TTL_MS).toISOString()
-          : null,
+        expires_at: expiresAt,
       });
 
       // Best-effort: email users whose saved location is within the pin's
