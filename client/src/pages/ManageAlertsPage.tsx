@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { pinsApi } from '../api/pins.js';
 import { PinAreaForm } from '../components/PinAreaForm.js';
+import { useAuth } from '../contexts/AuthContext.js';
 import { useGeolocation } from '../hooks/useGeolocation.js';
 import type { Pin } from '../types/domain.js';
 
@@ -11,30 +12,39 @@ const SEVERITY_LABEL: Record<string, string> = {
 };
 
 export function ManageAlertsPage() {
+  const { user } = useAuth();
   const [pins, setPins] = useState<Pin[]>([]);
   const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const { position } = useGeolocation();
 
   useEffect(() => {
-    if (!position) {
+    if (!position || !user) {
       return;
     }
 
     pinsApi
       .list({ lat: position.lat, lng: position.lng, radius: 5000 })
-      .then(setPins)
+      .then((all) => setPins(all.filter((pin) => pin.reporter_id === user.id)))
       .catch((err) =>
         setLoadError(err instanceof Error ? err.message : 'Failed to load pins'),
       );
-  }, [position]);
+  }, [position, user]);
 
   async function handleDelete(id: string) {
+    setActionError('');
+    setDeletingId(id);
     try {
       await pinsApi.delete(id);
       setPins((prev) => prev.filter((pin) => pin.id !== id));
-    } catch {
-      // silent — the item stays in the list so the user can retry
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : 'Failed to delete alert',
+      );
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -64,6 +74,7 @@ export function ManageAlertsPage() {
       )}
 
       {loadError && <p className="error-msg">{loadError}</p>}
+      {actionError && <p className="error-msg">{actionError}</p>}
 
       {pins.length === 0 && !loadError && !showForm && (
         <p className="empty-state">
@@ -77,9 +88,7 @@ export function ManageAlertsPage() {
             <div className="watch-area-info">
               <span className="watch-area-radius">{pin.radius_m}m radius</span>
               <span className="watch-area-severity">{SEVERITY_LABEL[pin.severity]}</span>
-              <span className="watch-area-email">
-                {pin.reporter_id ? '👤 Account pin' : '🕶 Anonymous pin'}
-              </span>
+              <span className="watch-area-email">👤 My pin</span>
               <span className="watch-area-coords">
                 {pin.lat.toFixed(4)}, {pin.lng.toFixed(4)}
               </span>
@@ -87,8 +96,9 @@ export function ManageAlertsPage() {
             <button
               className="btn btn-danger btn-sm"
               onClick={() => handleDelete(pin.id)}
+              disabled={deletingId === pin.id}
             >
-              Delete
+              {deletingId === pin.id ? 'Deleting…' : 'Delete'}
             </button>
           </li>
         ))}
