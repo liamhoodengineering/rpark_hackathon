@@ -46,6 +46,16 @@ interface RouteResult {
   coordinates: [number, number][];
 }
 
+interface RouteOption {
+  id: string;
+  distanceM: number;
+  durationS: number;
+  path: Array<[number, number]>;
+  hazards: Pin[];
+  score: number;
+  routeLabel: string;
+}
+
 const SEVERITIES: Severity[] = ['Low', 'Medium', 'High'];
 const SEVERITY_COLOR: Record<Severity, string> = {
   Low: '#22c55e',
@@ -106,12 +116,12 @@ export default function Map({
     null,
   );
   const [destinationLabel, setDestinationLabel] = useState('');
-  const [routePath, setRoutePath] = useState<Array<[number, number]>>([]);
-  const [routeInfo, setRouteInfo] = useState<{ distanceM: number; durationS: number } | null>(
-    null,
-  );
-  const [routeHazards, setRouteHazards] = useState<Pin[]>([]);
+  const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [routeError, setRouteError] = useState('');
+
+  const selectedRoute =
+    routeOptions.find((route) => route.id === selectedRouteId) ?? routeOptions[0] ?? null;
 
   const fetchPins = useCallback(async () => {
     try {
@@ -234,13 +244,70 @@ export default function Map({
   }, [pins, selectedPinId]);
 
   useEffect(() => {
-    if (routePath.length < 2) {
-      setRouteHazards([]);
+    setRouteOptions((currentRoutes) => {
+      if (currentRoutes.length === 0) {
+        return currentRoutes;
+      }
+
+      const rescoredRoutes = rankRouteOptions(
+        currentRoutes.map((route) => ({
+          distance: route.distanceM,
+          duration: route.durationS,
+          coordinates: route.path.map(([lat, lng]) => [lng, lat] as [number, number]),
+        })),
+        pins,
+      );
+
+      return rescoredRoutes;
+    });
+  }, [pins]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const routeLayer = routeLayerRef.current;
+    if (!map || !routeLayer) return;
+
+    routeLayer.clearLayers();
+
+    if (!selectedRoute || !userPosition || !activeDestination) {
       return;
     }
-    const hazards = pins.filter((pin) => routeIntersectsPinArea(routePath, pin));
-    setRouteHazards(hazards);
-  }, [pins, routePath]);
+
+    const routeBounds = L.latLngBounds(selectedRoute.path);
+
+    for (const route of routeOptions) {
+      const isSelected = route.id === selectedRoute.id;
+
+      L.polyline(route.path, {
+        color: isSelected ? '#2563eb' : '#64748b',
+        weight: isSelected ? 5 : 4,
+        opacity: isSelected ? 0.94 : 0.5,
+        dashArray: isSelected ? undefined : '10 8',
+      }).addTo(routeLayer);
+    }
+
+    L.circleMarker([userPosition.lat, userPosition.lng], {
+      radius: 6,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: '#2563eb',
+      fillOpacity: 1,
+    })
+      .addTo(routeLayer)
+      .bindTooltip('Start');
+
+    L.circleMarker([activeDestination.lat, activeDestination.lng], {
+      radius: 7,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: '#0ea5e9',
+      fillOpacity: 1,
+    })
+      .addTo(routeLayer)
+      .bindTooltip('Destination');
+
+    map.fitBounds(routeBounds, { padding: [40, 40] });
+  }, [activeDestination, routeOptions, selectedRoute, userPosition]);
 
   // ── Toggle the draggable report marker + preview circle ──
   useEffect(() => {
@@ -330,9 +397,8 @@ export default function Map({
 
   function clearNavigation() {
     routeLayerRef.current?.clearLayers();
-    setRoutePath([]);
-    setRouteInfo(null);
-    setRouteHazards([]);
+    setRouteOptions([]);
+    setSelectedRouteId(null);
     setRouteError('');
     setActiveDestination(null);
     setDestinationLabel('');
@@ -353,42 +419,16 @@ export default function Map({
     setRouteError('');
 
     try {
-      const route = await fetchRouteForMode(routeMode, userPosition, destination);
+      const routes = await fetchRoutesForMode(routeMode, userPosition, destination);
+      const rankedRoutes = rankRouteOptions(routes, pins);
 
-      const latLngs = route.coordinates.map(
-        ([lng, lat]) => [lat, lng] as [number, number],
-      );
+      if (rankedRoutes.length === 0) {
+        throw new Error('No route found for this destination.');
+      }
 
       routeLayer.clearLayers();
-      const polyline = L.polyline(latLngs, {
-        color: '#2563eb',
-        weight: 5,
-        opacity: 0.92,
-      }).addTo(routeLayer);
-
-      L.circleMarker([userPosition.lat, userPosition.lng], {
-        radius: 6,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: '#2563eb',
-        fillOpacity: 1,
-      })
-        .addTo(routeLayer)
-        .bindTooltip('Start');
-
-      L.circleMarker([destination.lat, destination.lng], {
-        radius: 7,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: '#0ea5e9',
-        fillOpacity: 1,
-      })
-        .addTo(routeLayer)
-        .bindTooltip('Destination');
-
-      map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
-      setRoutePath(latLngs);
-      setRouteInfo({ distanceM: route.distance, durationS: route.duration });
+      setRouteOptions(rankedRoutes);
+      setSelectedRouteId(rankedRoutes[0].id);
       setActiveDestination(destination);
       setDestinationLabel(destination.label);
       setSearchResults([]);
@@ -586,7 +626,7 @@ export default function Map({
             <button
               className="btn btn-ghost"
               onClick={clearNavigation}
-              disabled={navigating && routePath.length === 0}
+              disabled={navigating && routeOptions.length === 0}
             >
               Clear
             </button>
@@ -610,20 +650,44 @@ export default function Map({
             </ul>
           )}
           {destinationLabel && <p className="nav-destination">To: {destinationLabel}</p>}
+          {routeOptions.length > 0 && (
+            <div className="route-options">
+              {routeOptions.map((route) => {
+                const isSelected = route.id === selectedRoute?.id;
+                return (
+                  <button
+                    key={route.id}
+                    type="button"
+                    className={`route-option${isSelected ? ' route-option-selected' : ''}`}
+                    onClick={() => setSelectedRouteId(route.id)}
+                  >
+                    <span className="route-option-title">
+                      {route.routeLabel}
+                    </span>
+                    <span className="route-option-meta">
+                      {formatDistance(route.distanceM)} • {formatDuration(route.durationS)} • {route.hazards.length} hazard{route.hazards.length === 1 ? '' : 's'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {routeInfo && !reportMode && (
+      {selectedRoute && !reportMode && (
         <div className="route-chip" role="status" aria-live="polite">
-          Route ({routeMode}): {formatDistance(routeInfo.distanceM)} • {formatDuration(routeInfo.durationS)}
-          {routeHazards.length > 0 ? ` • ⚠ ${routeHazards.length} hazard area(s) ahead` : ' • No hazard areas on route'}
+          Route ({routeMode}): {formatDistance(selectedRoute.distanceM)} • {formatDuration(selectedRoute.durationS)}
+          {selectedRoute.hazards.length > 0
+            ? ` • ⚠ ${selectedRoute.hazards.length} hazard area(s) ahead`
+            : ' • No hazard areas on route'}
         </div>
       )}
 
-      {!reportMode && routeHazards.length > 0 && (
+      {!reportMode && selectedRoute && selectedRoute.hazards.length > 0 && (
         <div className="route-chip route-chip-warning" role="status" aria-live="polite">
-          Warning: route passes through {routeHazards.length} hazard area(s). Highest severity:{' '}
-          {highestSeverity(routeHazards)}.
+          Warning: route passes through {selectedRoute.hazards.length} hazard area(s). Highest severity:{' '}
+          {highestSeverity(selectedRoute.hazards)}.
         </div>
       )}
 
@@ -762,7 +826,7 @@ function routeUrlCandidates(
   destination: { lat: number; lng: number },
 ): string[] {
   const coords = `${start.lng},${start.lat};${destination.lng},${destination.lat}`;
-  const suffix = `${coords}?overview=full&geometries=geojson`;
+  const suffix = `${coords}?overview=full&geometries=geojson&alternatives=true`;
 
   if (mode === 'walk') {
     return [
@@ -781,11 +845,11 @@ function routeUrlCandidates(
   return [`https://router.project-osrm.org/route/v1/driving/${suffix}`];
 }
 
-async function fetchRouteForMode(
+async function fetchRoutesForMode(
   mode: RouteMode,
   start: { lat: number; lng: number },
   destination: { lat: number; lng: number },
-): Promise<RouteResult> {
+): Promise<RouteResult[]> {
   let lastError: Error | null = null;
 
   for (const url of routeUrlCandidates(mode, start, destination)) {
@@ -803,22 +867,128 @@ async function fetchRouteForMode(
         }>;
       };
 
-      const route = payload.routes?.[0];
-      if (!route || !route.geometry?.coordinates?.length) {
+      const routes = (payload.routes ?? []).filter(
+        (route) => route.geometry?.coordinates?.length,
+      );
+
+      if (routes.length === 0) {
         throw new Error('No route found for this destination.');
       }
 
-      return {
-        distance: route.distance,
-        duration: route.duration,
-        coordinates: route.geometry.coordinates,
-      };
+      return dedupeRoutes(
+        routes.map((route) => ({
+          distance: route.distance,
+          duration: route.duration,
+          coordinates: route.geometry.coordinates,
+        })),
+      );
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Route request failed');
     }
   }
 
   throw lastError ?? new Error('Failed to fetch route for this mode.');
+}
+
+function dedupeRoutes(routes: RouteResult[]): RouteResult[] {
+  const seen = new Set<string>();
+
+  return routes.filter((route) => {
+    const signature = routeSignature(route.coordinates);
+    if (seen.has(signature)) {
+      return false;
+    }
+
+    seen.add(signature);
+    return true;
+  });
+}
+
+function routeSignature(coordinates: [number, number][]): string {
+  if (coordinates.length === 0) {
+    return 'empty';
+  }
+
+  const step = Math.max(1, Math.floor(coordinates.length / 8));
+  const samples: string[] = [];
+
+  for (let index = 0; index < coordinates.length; index += step) {
+    const [lng, lat] = coordinates[index];
+    samples.push(`${lat.toFixed(4)},${lng.toFixed(4)}`);
+  }
+
+  const [lastLng, lastLat] = coordinates[coordinates.length - 1];
+  samples.push(`${lastLat.toFixed(4)},${lastLng.toFixed(4)}`);
+
+  return samples.join('|');
+}
+
+function rankRouteOptions(routes: RouteResult[], pins: Pin[]): RouteOption[] {
+  const scoredRoutes = routes.map((route) => {
+    const path = route.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]);
+    const hazards = pins.filter((pin) => routeIntersectsPinArea(path, pin));
+    const severityPenalty = hazards.reduce(
+      (total, pin) => total + hazardPenaltyForSeverity(pin.severity),
+      0,
+    );
+    const score = route.duration + severityPenalty * 60 + hazards.length * 45;
+
+    return {
+      id: routeSignature(route.coordinates),
+      distanceM: route.distance,
+      durationS: route.duration,
+      path,
+      hazards,
+      score,
+      routeLabel: 'Route',
+    };
+  });
+
+  if (scoredRoutes.length === 0) {
+    return [];
+  }
+
+  const fastestRoute = [...scoredRoutes].sort((left, right) => {
+    if (left.durationS !== right.durationS) {
+      return left.durationS - right.durationS;
+    }
+
+    return left.score - right.score;
+  })[0];
+
+  const safestRoute = [...scoredRoutes].sort((left, right) => {
+    if (left.score !== right.score) {
+      return left.score - right.score;
+    }
+
+    return left.durationS - right.durationS;
+  })[0];
+
+  const preferredRoutes: RouteOption[] = [
+    {
+      ...fastestRoute,
+      routeLabel: 'Fastest',
+    },
+  ];
+
+  if (safestRoute.id !== fastestRoute.id) {
+    preferredRoutes.push({
+      ...safestRoute,
+      routeLabel: 'Safest',
+    });
+  }
+
+  return preferredRoutes;
+}
+
+function hazardPenaltyForSeverity(severity: Severity): number {
+  if (severity === 'High') {
+    return 10;
+  }
+  if (severity === 'Medium') {
+    return 4;
+  }
+  return 1;
 }
 
 function routeIntersectsPinArea(

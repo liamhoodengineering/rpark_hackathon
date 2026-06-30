@@ -501,6 +501,47 @@ body {
   text-overflow: ellipsis;
 }
 
+.route-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.route-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid #334155;
+  border-radius: 10px;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.route-option:hover {
+  border-color: #475569;
+}
+
+.route-option-selected {
+  border-color: #3b82f6;
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.route-option-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.route-option-meta {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
 .nav-results {
   list-style: none;
   margin: 0.55rem 0 0;
