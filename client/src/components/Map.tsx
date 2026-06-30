@@ -38,6 +38,14 @@ interface DestinationSearchResult {
   label: string;
 }
 
+type RouteMode = 'drive' | 'walk' | 'bike';
+
+interface RouteResult {
+  distance: number;
+  duration: number;
+  coordinates: [number, number][];
+}
+
 const SEVERITIES: Severity[] = ['Low', 'Medium', 'High'];
 const SEVERITY_COLOR: Record<Severity, string> = {
   Low: '#22c55e',
@@ -90,9 +98,13 @@ export default function Map({
   const [reportError, setReportError] = useState('');
 
   const [destinationQuery, setDestinationQuery] = useState('');
+  const [routeMode, setRouteMode] = useState<RouteMode>('drive');
   const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>([]);
   const [searchingDestinations, setSearchingDestinations] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [activeDestination, setActiveDestination] = useState<DestinationSearchResult | null>(
+    null,
+  );
   const [destinationLabel, setDestinationLabel] = useState('');
   const [routePath, setRoutePath] = useState<Array<[number, number]>>([]);
   const [routeInfo, setRouteInfo] = useState<{ distanceM: number; durationS: number } | null>(
@@ -322,6 +334,7 @@ export default function Map({
     setRouteInfo(null);
     setRouteHazards([]);
     setRouteError('');
+    setActiveDestination(null);
     setDestinationLabel('');
     setSearchResults([]);
   }
@@ -340,30 +353,9 @@ export default function Map({
     setRouteError('');
 
     try {
-      const routeUrl =
-        'https://router.project-osrm.org/route/v1/foot/' +
-        `${userPosition.lng},${userPosition.lat};${destination.lng},${destination.lat}` +
-        '?overview=full&geometries=geojson';
+      const route = await fetchRouteForMode(routeMode, userPosition, destination);
 
-      const routeResponse = await fetch(routeUrl);
-      if (!routeResponse.ok) {
-        throw new Error(`Routing request failed (${routeResponse.status})`);
-      }
-
-      const payload = (await routeResponse.json()) as {
-        routes?: Array<{
-          distance: number;
-          duration: number;
-          geometry: { coordinates: [number, number][] };
-        }>;
-      };
-
-      const route = payload.routes?.[0];
-      if (!route || !route.geometry?.coordinates?.length) {
-        throw new Error('No route found for this destination.');
-      }
-
-      const latLngs = route.geometry.coordinates.map(
+      const latLngs = route.coordinates.map(
         ([lng, lat]) => [lat, lng] as [number, number],
       );
 
@@ -397,6 +389,7 @@ export default function Map({
       map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
       setRoutePath(latLngs);
       setRouteInfo({ distanceM: route.distance, durationS: route.duration });
+      setActiveDestination(destination);
       setDestinationLabel(destination.label);
       setSearchResults([]);
     } catch (error) {
@@ -406,6 +399,15 @@ export default function Map({
       setNavigating(false);
     }
   }
+
+  useEffect(() => {
+    if (!activeDestination || reportMode || navigating) {
+      return;
+    }
+    void navigateToDestination(activeDestination);
+    // Re-route when mode changes so duration/distance reflect drive/walk/bike.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeMode]);
 
   async function searchDestinations() {
     if (!destinationQuery.trim()) {
@@ -564,6 +566,16 @@ export default function Map({
                 }
               }}
             />
+            <select
+              className="nav-mode-select"
+              value={routeMode}
+              onChange={(e) => setRouteMode(e.target.value as RouteMode)}
+              aria-label="Navigation mode"
+            >
+              <option value="drive">Drive</option>
+              <option value="walk">Walk</option>
+              <option value="bike">Bike</option>
+            </select>
             <button
               className="btn btn-primary"
               onClick={() => void searchDestinations()}
@@ -603,7 +615,7 @@ export default function Map({
 
       {routeInfo && !reportMode && (
         <div className="route-chip" role="status" aria-live="polite">
-          Route: {formatDistance(routeInfo.distanceM)} • {formatDuration(walkingDurationS(routeInfo.distanceM))}
+          Route ({routeMode}): {formatDistance(routeInfo.distanceM)} • {formatDuration(routeInfo.durationS)}
           {routeHazards.length > 0 ? ` • ⚠ ${routeHazards.length} hazard area(s) ahead` : ' • No hazard areas on route'}
         </div>
       )}
@@ -718,13 +730,6 @@ function formatDistance(distanceM: number): string {
   return `${(distanceM / 1000).toFixed(1)} km`;
 }
 
-const WALKING_SPEED_KMH = 5;
-
-function walkingDurationS(distanceM: number): number {
-  // ETA assuming a constant walking speed (5 km/h → 5000 m per 3600 s).
-  return distanceM / ((WALKING_SPEED_KMH * 1000) / 3600);
-}
-
 function formatDuration(durationS: number): string {
   const minutes = Math.max(1, Math.round(durationS / 60));
   if (minutes < 60) {
@@ -749,6 +754,71 @@ function highestSeverity(pins: Array<Pick<Pin, 'severity'>>): Severity {
     }
   }
   return top;
+}
+
+function routeUrlCandidates(
+  mode: RouteMode,
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+): string[] {
+  const coords = `${start.lng},${start.lat};${destination.lng},${destination.lat}`;
+  const suffix = `${coords}?overview=full&geometries=geojson`;
+
+  if (mode === 'walk') {
+    return [
+      `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${suffix}`,
+      `https://router.project-osrm.org/route/v1/walking/${suffix}`,
+    ];
+  }
+
+  if (mode === 'bike') {
+    return [
+      `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${suffix}`,
+      `https://router.project-osrm.org/route/v1/cycling/${suffix}`,
+    ];
+  }
+
+  return [`https://router.project-osrm.org/route/v1/driving/${suffix}`];
+}
+
+async function fetchRouteForMode(
+  mode: RouteMode,
+  start: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+): Promise<RouteResult> {
+  let lastError: Error | null = null;
+
+  for (const url of routeUrlCandidates(mode, start, destination)) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Routing request failed (${response.status})`);
+      }
+
+      const payload = (await response.json()) as {
+        routes?: Array<{
+          distance: number;
+          duration: number;
+          geometry: { coordinates: [number, number][] };
+        }>;
+      };
+
+      const route = payload.routes?.[0];
+      if (!route || !route.geometry?.coordinates?.length) {
+        throw new Error('No route found for this destination.');
+      }
+
+      return {
+        distance: route.distance,
+        duration: route.duration,
+        coordinates: route.geometry.coordinates,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Route request failed');
+    }
+  }
+
+  throw lastError ?? new Error('Failed to fetch route for this mode.');
 }
 
 function routeIntersectsPinArea(
