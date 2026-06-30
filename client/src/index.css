@@ -450,10 +450,26 @@ body {
 }
 
 .nav-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   margin: 0 0 0.4rem;
+  padding: 0.15rem 0;
   font-size: 0.75rem;
   color: #94a3b8;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.nav-label:active {
+  cursor: grabbing;
+}
+
+.nav-label-grip {
+  font-size: 0.9rem;
+  line-height: 1;
+  color: #64748b;
 }
 
 .nav-row {

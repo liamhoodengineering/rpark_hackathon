@@ -126,6 +126,52 @@ export default function Map({
   const [showRouteHazards, setShowRouteHazards] = useState(false);
   const [routeError, setRouteError] = useState('');
 
+  // ── Draggable nav panel ──
+  const navPanelRef = useRef<HTMLDivElement>(null);
+  const [navPos, setNavPos] = useState<{ x: number; y: number } | null>(null);
+  const navDragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+
+  function handleNavLabelPointerDown(e: React.PointerEvent<HTMLLabelElement>) {
+    const panel = navPanelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    navDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function handleNavLabelPointerMove(e: React.PointerEvent<HTMLLabelElement>) {
+    const drag = navDragRef.current;
+    const panel = navPanelRef.current;
+    if (!drag || !panel) return;
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    const margin = 40; // keep at least this much of the panel on screen
+    const nextX = drag.originX + (e.clientX - drag.startX);
+    const nextY = drag.originY + (e.clientY - drag.startY);
+    setNavPos({
+      x: Math.min(Math.max(nextX, margin - width), window.innerWidth - margin),
+      y: Math.min(Math.max(nextY, 0), window.innerHeight - margin),
+    });
+  }
+
+  function handleNavLabelPointerUp(e: React.PointerEvent<HTMLLabelElement>) {
+    navDragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }
+
   const selectedRoute =
     routeOptions.find((route) => route.id === selectedRouteId) ?? routeOptions[0] ?? null;
 
@@ -636,8 +682,22 @@ export default function Map({
       </button>
 
       {!reportMode && (
-        <div className="nav-panel">
-          <label className="nav-label" htmlFor="destination-input">
+        <div
+          className="nav-panel"
+          ref={navPanelRef}
+          style={navPos ? { left: navPos.x, top: navPos.y, right: 'auto' } : undefined}
+        >
+          <label
+            className="nav-label"
+            htmlFor="destination-input"
+            onPointerDown={handleNavLabelPointerDown}
+            onPointerMove={handleNavLabelPointerMove}
+            onPointerUp={handleNavLabelPointerUp}
+            onPointerCancel={handleNavLabelPointerUp}
+          >
+            <span className="nav-label-grip" aria-hidden="true">
+              ⠿
+            </span>
             Navigate to
           </label>
           <div className="nav-row">
