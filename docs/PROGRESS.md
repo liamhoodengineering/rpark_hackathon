@@ -29,10 +29,30 @@
 | Pins routes                        | 🟦 Stub — Team Member #3              |
 | Votes routes                       | 🟦 Stub — Team Member #4              |
 | Client (Vite + React)              | ✅ Scaffolded (map + pages are stubs) |
+| Frontend map + report UI (#5)      | ✅ Implemented (pins API still a stub)|
 
 ---
 
 ## Changelog
+
+### 2026-06-30 — Map tiles fix (OSM blocked) + dropped photo upload
+
+- **Blank map fixed:** `tile.openstreetmap.org` is blocked on this network (tile `<img>`s load as 0×0 broken images — map was blank gray while pins/zoom still worked). Switched the tile layer in [client/src/components/Map.tsx](../client/src/components/Map.tsx) to **CARTO Voyager** (`{s}.basemaps.cartocdn.com/rastertiles/voyager/...`, subdomains `abcd`, free, no API key, still OpenStreetMap data); updated attribution to credit OSM + CARTO. Verified streets render in the integrated browser.
+- **Removed photo upload** (feature dropped): deleted `pinsApi.uploadPhoto` from [client/src/api/pins.ts](../client/src/api/pins.ts), the photo file input + `reportPhoto` state + best-effort upload call in the report flow ([client/src/components/Map.tsx](../client/src/components/Map.tsx)), and the related CSS. Reverted the temporary `BASE_URL` export in [client/src/api/client.ts](../client/src/api/client.ts). The `/pins/:id/photo` endpoint (Team Member #2) is no longer called by the client.
+- `npm run typecheck --workspace client` passes.
+
+### 2026-06-30 — Frontend map + report UI (Team Member #5)
+
+- Built the full Leaflet **MapView** in [client/src/components/Map.tsx](../client/src/components/Map.tsx) (replaces the old base-map stub and `App.tsx`'s `MapPlaceholder`):
+  - Active pins render as **severity-colored** `circleMarker`s (green/orange/red) with a translucent `L.circle` **radius layer**; clicking a marker calls `onPinSelect` so `App` shows the existing `VoteCard`.
+  - **Fetch-on-`moveend`** (plus an initial load) queries `GET /pins?lat=&lng=&radius=` using the viewport center + corner distance (radius capped at 20 km). Failures are swallowed so the map stays usable while the pins API is still a 501 stub.
+  - **Report flow:** floating "📍 Report hazard" button → draggable pin (defaults to GPS or map center) → radius slider (10–500 m) + severity select + optional name/description/photo → submit. Live preview circle tracks drag/radius/severity. Logged-out users see an "anonymous pins expire in 1h" hint.
+  - User GPS draws a blue "you are here" marker and recenters the map once.
+- New API client [client/src/api/pins.ts](../client/src/api/pins.ts): `pinsApi.list/create/remove/uploadPhoto`. Photo upload is **best-effort** multipart (the `/pins/:id/photo` endpoint is owned by #2). Exported `BASE_URL` from [client/src/api/client.ts](../client/src/api/client.ts) for the multipart call.
+- [client/src/App.tsx](../client/src/App.tsx): wired `MapView` in, added a `refreshKey` so casting a vote / deleting a pin re-fetches the map; removed the demo `MapPlaceholder` + its mock pin.
+- Added map/report styling in [client/src/index.css](../client/src/index.css) (`.map`, `.map-view`, `.report-fab`, `.report-panel`, draggable `.report-pin` divIcon). The draggable marker uses a `divIcon` (emoji) to avoid Leaflet's missing marker-image asset issue.
+- **Contract this UI expects from #3:** `GET /pins?lat&lng&radius` → `Pin[]`; `POST /pins` body `{ lat, lng, name?, description?, severity, radius_m }` → `Pin`; `DELETE /pins/:id`. Matches the spec's API surface and `types/domain.ts`.
+- Verified with `npm run typecheck --workspace client` (passes).
 
 ### 2026-06-30 — Dropped PostGIS; pins use plain lat/lng
 
