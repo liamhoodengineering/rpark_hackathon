@@ -35,6 +35,33 @@ export interface Pin {
   created_at: string;
 }
 
+export interface PinLookupInput {
+  lat: number;
+  lng: number;
+  radius: number;
+}
+
+export interface PinCreateInput {
+  reporter_id: string | null;
+  lat: number;
+  lng: number;
+  name: string | null;
+  description: string | null;
+  severity: Severity;
+  radius_m: number;
+  expires_at: string | null;
+}
+
+export interface PinUpdateInput {
+  lat: number;
+  lng: number;
+  name: string | null;
+  description: string | null;
+  severity: Severity;
+  radius_m: number;
+  status: PinStatus;
+}
+
 export interface Vote {
   id: string;
   pin_id: string;
