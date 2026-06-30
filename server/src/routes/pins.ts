@@ -40,7 +40,7 @@ const listPinsSchema = z.object({
 const createPinSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  name: z.string().trim().max(120).nullable().optional(),
+  name: z.string().trim().min(1, 'Title is required').max(120),
   description: z.string().trim().max(1000).nullable().optional(),
   severity: z.enum(['Low', 'Medium', 'High']),
   radius_m: z.number().int().min(10).max(500),
