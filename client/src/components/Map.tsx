@@ -603,7 +603,7 @@ export default function Map({
 
       {routeInfo && !reportMode && (
         <div className="route-chip" role="status" aria-live="polite">
-          Route: {formatDistance(routeInfo.distanceM)} • {formatDuration(routeInfo.durationS)}
+          Route: {formatDistance(routeInfo.distanceM)} • {formatDuration(walkingDurationS(routeInfo.distanceM))}
           {routeHazards.length > 0 ? ` • ⚠ ${routeHazards.length} hazard area(s) ahead` : ' • No hazard areas on route'}
         </div>
       )}
@@ -716,6 +716,13 @@ function formatDistance(distanceM: number): string {
     return `${Math.round(distanceM)} m`;
   }
   return `${(distanceM / 1000).toFixed(1)} km`;
+}
+
+const WALKING_SPEED_KMH = 5;
+
+function walkingDurationS(distanceM: number): number {
+  // ETA assuming a constant walking speed (5 km/h → 5000 m per 3600 s).
+  return distanceM / ((WALKING_SPEED_KMH * 1000) / 3600);
 }
 
 function formatDuration(durationS: number): string {
