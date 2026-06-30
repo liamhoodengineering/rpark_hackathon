@@ -41,6 +41,7 @@ export class UserService {
     const { data, error } = await supabase
       .from('users')
       .select('id, email, display_name, lat, lng')
+      .eq('alerts_enabled', true)
       .not('lat', 'is', null)
       .not('lng', 'is', null)
       .gte('lat', box.minLat)

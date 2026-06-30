@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import MapView from './components/Map.js';
+import { LiveLocationSync } from './components/LiveLocationSync.js';
 import { NavBar } from './components/NavBar.js';
 import { ProtectedRoute } from './components/ProtectedRoute.js';
 import { VoteCard } from './components/VoteCard.js';
@@ -47,7 +48,7 @@ function MapPage() {
           />
           <button
             style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }}
-            className="btn btn-ghost btn-sm"
+            className='btn btn-ghost btn-sm'
             onClick={() => setSelectedPin(null)}
           >
             ✕
@@ -62,21 +63,28 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: '100vh',
+          }}
+        >
           <NavBar />
+          <LiveLocationSync />
           <Routes>
-            <Route path="/" element={<MapPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path='/' element={<MapPage />} />
+            <Route path='/login' element={<LoginPage />} />
+            <Route path='/register' element={<RegisterPage />} />
             <Route
-              path="/alerts"
+              path='/alerts'
               element={
                 <ProtectedRoute>
                   <ManageAlertsPage />
                 </ProtectedRoute>
               }
             />
-            <Route path="/unsubscribe" element={<UnsubscribePage />} />
+            <Route path='/unsubscribe' element={<UnsubscribePage />} />
           </Routes>
         </div>
       </BrowserRouter>
