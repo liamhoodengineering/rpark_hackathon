@@ -436,6 +436,112 @@ body {
 .locate-fab:hover:not(:disabled) { background: #f1f5f9; color: #2563eb; }
 .locate-fab:disabled { color: #94a3b8; cursor: default; }
 
+.nav-panel {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1100;
+  width: min(540px, calc(100vw - 2rem));
+  background: rgba(17, 24, 39, 0.94);
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 0.65rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.nav-label {
+  display: block;
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.nav-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.9rem;
+}
+
+.nav-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.nav-destination {
+  margin: 0.45rem 0 0;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-results {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border-top: 1px solid #1e293b;
+}
+
+.nav-result-item + .nav-result-item {
+  border-top: 1px solid rgba(51, 65, 85, 0.35);
+}
+
+.nav-result-main {
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.2rem;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.nav-result-main:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.route-chip {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 1100;
+  background: rgba(17, 24, 39, 0.92);
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.route-chip + .route-chip {
+  bottom: 3.35rem;
+}
+
+.route-chip-error {
+  color: #fecaca;
+  border-color: #7f1d1d;
+}
+
+.route-chip-warning {
+  color: #fde68a;
+  border-color: #92400e;
+}
+
 /* Report flow panel */
 .report-panel {
   position: absolute;
