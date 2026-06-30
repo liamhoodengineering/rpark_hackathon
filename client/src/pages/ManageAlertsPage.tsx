@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { watchAreasApi } from '../api/watchAreas.js';
-import { WatchAreaForm } from '../components/WatchAreaForm.js';
+import { PinAreaForm } from '../components/PinAreaForm.js';
 import { useGeolocation } from '../hooks/useGeolocation.js';
 import type { WatchArea } from '../types/domain.js';
 
@@ -51,7 +51,7 @@ export function ManageAlertsPage() {
       </div>
 
       {showForm && (
-        <WatchAreaForm
+        <PinAreaForm
           defaultLat={position?.lat}
           defaultLng={position?.lng}
           onCreated={handleCreated}

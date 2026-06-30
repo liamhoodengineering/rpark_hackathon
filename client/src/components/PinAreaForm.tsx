@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { watchAreasApi } from '../api/watchAreas.js';
 import type { Severity, WatchArea } from '../types/domain.js';
 
-interface WatchAreaFormProps {
+interface PinAreaFormProps {
   defaultLat?: number;
   defaultLng?: number;
   onCreated: (wa: WatchArea) => void;
@@ -11,7 +11,7 @@ interface WatchAreaFormProps {
 
 const SEVERITIES: Severity[] = ['Low', 'Medium', 'High'];
 
-export function WatchAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: WatchAreaFormProps) {
+export function PinAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: PinAreaFormProps) {
   const [lat, setLat] = useState(defaultLat?.toFixed(6) ?? '');
   const [lng, setLng] = useState(defaultLng?.toFixed(6) ?? '');
   const [radiusM, setRadiusM] = useState(500);
@@ -40,15 +40,15 @@ export function WatchAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: W
       });
       onCreated(wa);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create watch area');
+      setError(err instanceof Error ? err.message : 'Failed to create pin area');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form className="watch-area-form" onSubmit={handleSubmit}>
-      <h3>New Alert Area</h3>
+    <form className="pin-area-form" onSubmit={handleSubmit}>
+      <h3>New Pin Area</h3>
       {error && <p className="error-msg">{error}</p>}
 
       <label>
@@ -112,7 +112,7 @@ export function WatchAreaForm({ defaultLat, defaultLng, onCreated, onCancel }: W
 
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? 'Saving…' : 'Save alert area'}
+          {loading ? 'Saving…' : 'Save pin area'}
         </button>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           Cancel
