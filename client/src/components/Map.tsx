@@ -515,7 +515,21 @@ export default function Map({
 
   function recenterOnUser() {
     const map = mapRef.current;
+    const pinsLayer = pinsLayerRef.current;
     if (!map || !userPosition) return;
+
+    // Hide the hazard markers + the "you are here" marker during the fly-in so
+    // nothing streaks across the screen, then restore them once it settles.
+    const userMarkerEl = userMarkerRef.current?.getElement() as
+      | SVGElement
+      | undefined;
+    if (pinsLayer && map.hasLayer(pinsLayer)) map.removeLayer(pinsLayer);
+    if (userMarkerEl) userMarkerEl.style.display = 'none';
+    map.once('moveend', () => {
+      if (pinsLayer && !map.hasLayer(pinsLayer)) pinsLayer.addTo(map);
+      if (userMarkerEl) userMarkerEl.style.display = '';
+    });
+
     map.flyTo(
       [userPosition.lat, userPosition.lng],
       Math.max(map.getZoom(), 16),
@@ -870,9 +884,10 @@ export default function Map({
                 setSeverityFilter(e.target.value as SeverityFilter)
               }
             >
-              <option value='high_and_lower'>High and lower</option>
-              <option value='medium_and_lower'>Medium and lower</option>
-              <option value='low'>Low</option>
+              <option value='all'>All</option>
+              <option value='Low'>Low</option>
+              <option value='Medium'>Medium</option>
+              <option value='High'>High</option>
             </select>
 
             <label className='map-filter-label' htmlFor='map-filter-time'>

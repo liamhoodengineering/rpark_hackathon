@@ -6,11 +6,9 @@ import { NavBar } from './components/NavBar.js';
 import { ProtectedRoute } from './components/ProtectedRoute.js';
 import { VoteCard } from './components/VoteCard.js';
 import { AuthProvider } from './contexts/AuthContext.js';
+import { AuthModalProvider } from './contexts/AuthModalContext.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
-import { LoginPage } from './pages/LoginPage.js';
 import { ManageAlertsPage } from './pages/ManageAlertsPage.js';
-import { MyPinsPage } from './pages/MyPinsPage.js';
-import { RegisterPage } from './pages/RegisterPage.js';
 import { UnsubscribePage } from './pages/UnsubscribePage.js';
 import type { Pin } from './types/domain.js';
 
@@ -65,38 +63,30 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: '100vh',
-          }}
-        >
-          <NavBar />
-          <LiveLocationSync />
-          <Routes>
-            <Route path='/' element={<MapPage />} />
-            <Route path='/login' element={<LoginPage />} />
-            <Route path='/register' element={<RegisterPage />} />
-            <Route
-              path='/my-pins'
-              element={
-                <ProtectedRoute>
-                  <MyPinsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path='/alerts'
-              element={
-                <ProtectedRoute>
-                  <ManageAlertsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path='/unsubscribe' element={<UnsubscribePage />} />
-          </Routes>
-        </div>
+        <AuthModalProvider>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: '100vh',
+            }}
+          >
+            <NavBar />
+            <LiveLocationSync />
+            <Routes>
+              <Route path='/' element={<MapPage />} />
+              <Route
+                path='/alerts'
+                element={
+                  <ProtectedRoute>
+                    <ManageAlertsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path='/unsubscribe' element={<UnsubscribePage />} />
+            </Routes>
+          </div>
+        </AuthModalProvider>
       </BrowserRouter>
     </AuthProvider>
   );

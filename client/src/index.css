@@ -238,6 +238,108 @@ body {
   color: #60a5fa;
 }
 
+/* ── Modal ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 2000;
+}
+.modal {
+  position: relative;
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 420px;
+}
+.modal-title {
+  margin: 0 0 1.25rem;
+  font-size: 1.5rem;
+  text-align: center;
+}
+.modal-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.25rem;
+  cursor: pointer;
+}
+.modal-close:hover {
+  color: #e2e8f0;
+}
+
+/* ── Auth modal ── */
+.auth-modal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+.auth-modal-body .auth-alt {
+  margin-top: auto;
+}
+.auth-tabs {
+  position: relative;
+  display: flex;
+  padding: 4px;
+  margin-bottom: 1.25rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  isolation: isolate;
+}
+.auth-tabs-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  height: calc(100% - 8px);
+  border-radius: 999px;
+  background: #3b82f6;
+  transition: transform 0.2s ease;
+  z-index: -1;
+}
+.auth-tabs-register .auth-tabs-thumb {
+  transform: translateX(100%);
+}
+.auth-tab {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.auth-tab-active {
+  color: #fff;
+}
+.auth-form button[type='submit'] {
+  justify-content: center;
+}
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #60a5fa;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* ── VoteCard ── */
 .vote-card {
   background: #111827;

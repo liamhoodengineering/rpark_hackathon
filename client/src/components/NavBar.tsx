@@ -1,9 +1,11 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.js';
+import { useAuthModal } from '../contexts/AuthModalContext.js';
 import { AlertsToggle } from './AlertsToggle.js';
 
 export function NavBar() {
   const { user, logout } = useAuth();
+  const { openAuth } = useAuthModal();
   const navigate = useNavigate();
 
   function handleLogout() {
@@ -32,14 +34,9 @@ export function NavBar() {
             </button>
           </>
         ) : (
-          <>
-            <Link to='/login' className='nav-link'>
-              Login
-            </Link>
-            <Link to='/register' className='btn btn-primary'>
-              Register
-            </Link>
-          </>
+          <button onClick={() => openAuth('login')} className='btn btn-primary'>
+            Sign in
+          </button>
         )}
       </div>
     </nav>

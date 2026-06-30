@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { request } from '../api/client.js';
 import { votesApi } from '../api/votes.js';
 import { useAuth } from '../contexts/AuthContext.js';
+import { useAuthModal } from '../contexts/AuthModalContext.js';
 import { haversineMeters } from '../lib/geo.js';
 import type { Pin, VoteTally, VoteType } from '../types/domain.js';
 
@@ -19,8 +19,14 @@ function formatExpiry(expiresAt: string): string {
   return diffMin > 0 ? `Expires in ${diffMin}m` : 'Expired';
 }
 
-export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCardProps) {
+export function VoteCard({
+  pin,
+  userPosition,
+  onVoteCast,
+  onPinRemoved,
+}: VoteCardProps) {
   const { user } = useAuth();
+  const { openAuth } = useAuthModal();
   const [tally, setTally] = useState<VoteTally | null>(null);
   const [voting, setVoting] = useState(false);
   const [myVote, setMyVote] = useState<VoteType | null>(null);
@@ -28,7 +34,10 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
   const [voteError, setVoteError] = useState('');
 
   useEffect(() => {
-    votesApi.getTally(pin.id).then(setTally).catch(() => null);
+    votesApi
+      .getTally(pin.id)
+      .then(setTally)
+      .catch(() => null);
   }, [pin.id]);
 
   useEffect(() => {
@@ -44,9 +53,12 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
 
   const isNearby =
     userPosition !== null &&
-    haversineMeters(userPosition.lat, userPosition.lng, pin.lat, pin.lng) <= pin.radius_m;
+    haversineMeters(userPosition.lat, userPosition.lng, pin.lat, pin.lng) <=
+      pin.radius_m;
 
   const isOwner = user !== null && user.id === pin.reporter_id;
+  const canVote =
+    user !== null && userPosition !== null && isNearby && !isOwner;
 
   async function castVote(voteType: VoteType) {
     if (!userPosition) return;
@@ -82,40 +94,62 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
     }
   }
 
-  const severityColor = { Low: '#22c55e', Medium: '#f97316', High: '#ef4444' }[pin.severity];
+  const severityColor = { Low: '#22c55e', Medium: '#f97316', High: '#ef4444' }[
+    pin.severity
+  ];
 
   return (
-    <div className="vote-card">
-      <div className="vote-card-header">
-        <span className="severity-badge" style={{ backgroundColor: severityColor }}>
+    <div className='vote-card'>
+      <div className='vote-card-header'>
+        <span
+          className='severity-badge'
+          style={{ backgroundColor: severityColor }}
+        >
           {pin.severity}
         </span>
-        {pin.name && <h3 className="pin-name">{pin.name}</h3>}
-        {pin.description && <p className="pin-desc">{pin.description}</p>}
+        {pin.name && <h3 className='pin-name'>{pin.name}</h3>}
+        {pin.description && <p className='pin-desc'>{pin.description}</p>}
         {pin.expires_at && (
-          <span className="expiry-badge">⏰ {formatExpiry(pin.expires_at)}</span>
+          <span className='expiry-badge'>
+            ⏰ {formatExpiry(pin.expires_at)}
+          </span>
         )}
-        {!pin.reporter_id && <span className="anon-badge">Anonymous pin</span>}
+        {!pin.reporter_id && <span className='anon-badge'>Anonymous pin</span>}
       </div>
 
-      <div className="vote-tally">
-        {tally ? (
-          <>
-            <span className="tally-up">👍 {tally.up}</span>
-            <span className="tally-sep">/</span>
-            <span className="tally-down">👎 {tally.down}</span>
-          </>
-        ) : (
-          <span className="tally-loading">Loading votes…</span>
-        )}
-      </div>
+      {voteError && <p className='error-msg'>{voteError}</p>}
 
-      {voteError && <p className="error-msg">{voteError}</p>}
+      <div className='vote-actions'>
+        <p className='vote-label'>Is this hazard still here?</p>
+        <div className='vote-buttons'>
+          <button
+            className={`btn btn-upvote${myVote === 'up' ? ' btn-vote-active' : ''}`}
+            onClick={() => castVote('up')}
+            disabled={!canVote || voting}
+            aria-pressed={myVote === 'up'}
+          >
+            👍 Still here · {tally ? tally.up : '…'}
+          </button>
+          <button
+            className={`btn btn-downvote${myVote === 'down' ? ' btn-vote-active' : ''}`}
+            onClick={() => castVote('down')}
+            disabled={!canVote || voting}
+            aria-pressed={myVote === 'down'}
+          >
+            👎 Gone now · {tally ? tally.down : '…'}
+          </button>
+        </div>
 
-      <div className="vote-actions">
         {!user ? (
-          <p className="vote-prompt">
-            <Link to="/login">Sign in</Link> to vote on hazards.
+          <p className='vote-prompt'>
+            <button
+              type='button'
+              className='link-button'
+              onClick={() => openAuth('login')}
+            >
+              Sign in
+            </button>{' '}
+            to vote on hazards.
           </p>
         ) : !userPosition ? (
           <p className="vote-prompt">Enable location to vote.</p>
@@ -149,7 +183,7 @@ export function VoteCard({ pin, userPosition, onVoteCast, onPinRemoved }: VoteCa
 
         {isOwner && (
           <button
-            className="btn btn-danger"
+            className='btn btn-danger'
             onClick={deletePin}
             disabled={deleting}
           >
