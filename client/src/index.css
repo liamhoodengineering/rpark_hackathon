@@ -598,6 +598,66 @@ body {
   border-color: #92400e;
 }
 
+.route-chip-button {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-chip-button:hover {
+  filter: brightness(1.08);
+}
+
+.route-hazards-panel {
+  position: absolute;
+  left: 1rem;
+  bottom: 5.8rem;
+  z-index: 1100;
+  width: min(420px, calc(100vw - 2rem));
+  max-height: 180px;
+  overflow-y: auto;
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid #92400e;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  padding: 0.65rem;
+}
+
+.route-hazards-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  color: #fde68a;
+  font-weight: 600;
+}
+
+.route-hazards-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.route-hazard-item {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.5rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.76rem;
+}
+
+.route-hazard-item:hover {
+  border-color: #f59e0b;
+}
+
 /* Report flow panel */
 .report-panel {
   position: absolute;
