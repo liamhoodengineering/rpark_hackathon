@@ -1,0 +1,16 @@
+import { request } from './client.js';
+import type { AuthResponse, PublicUser } from '../types/domain.js';
+
+export const authApi = {
+  register: (email: string, password: string, display_name: string) =>
+    request<AuthResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, display_name }),
+    }),
+  login: (email: string, password: string) =>
+    request<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+  me: () => request<PublicUser>('/auth/me'),
+};

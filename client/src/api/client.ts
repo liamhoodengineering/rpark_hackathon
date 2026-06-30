@@ -19,7 +19,7 @@ export function setToken(token: string | null): void {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
   const token = getToken();
@@ -37,6 +37,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       // non-JSON error body
     }
     throw new Error(message);
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T;
   }
   return (await res.json()) as T;
 }
