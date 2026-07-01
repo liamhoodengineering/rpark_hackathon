@@ -132,6 +132,27 @@ export default function Map({
   const [submitting, setSubmitting] = useState(false);
   const [reportError, setReportError] = useState('');
 
+  // On phones the report flow is two-step (place the pin, then open a fixed
+  // details panel); on desktop the panel opens immediately and is draggable.
+  const [isMobile, setIsMobile] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 640px)').matches,
+  );
+  const [reportDetailsOpen, setReportDetailsOpen] = useState(false);
+
+  // Drag offset for the route/navigation popup so it can be moved out of the
+  // way. Clamped to stay fully on screen with an edge buffer (see clampOffset).
+  const [navPanelOffset, setNavPanelOffset] = useState({ x: 0, y: 0 });
+  const navPanelRef = useRef<HTMLDivElement>(null);
+  const panelDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
+
   const [destinationQuery, setDestinationQuery] = useState('');
   const [routeMode, setRouteMode] = useState<RouteMode>('drive');
   // Navigation always steers around every avoidable hazard.
@@ -225,6 +246,14 @@ export default function Map({
     }
   }, []);
   fetchPinsRef.current = fetchPins;
+
+  // ── Track whether we're on a phone-sized screen (drives the report flow) ──
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   // ── Initialize the Leaflet map once ──
   useEffect(() => {
@@ -422,6 +451,8 @@ export default function Map({
   // reroutes for the same destination), so manual panning is never interrupted.
   useEffect(() => {
     fitDoneRef.current = false;
+    // Reset the popup back to its anchored position for each new route.
+    setNavPanelOffset({ x: 0, y: 0 });
   }, [activeDestination]);
 
   useEffect(() => {
@@ -551,14 +582,76 @@ export default function Map({
     setReportDescription('');
     setReportExpiresHours(user ? 2 : 1);
     setReportError('');
+    // Desktop shows the details panel right away; phones place the pin first.
+    setReportDetailsOpen(!isMobile);
     setReportMode(true);
     map.panTo([start.lat, start.lng]);
   }
 
   function cancelReport() {
     setReportMode(false);
+    setReportDetailsOpen(false);
     setReportLatLng(null);
     setReportError('');
+  }
+
+  // ── Drag the route/navigation popup out of the way (clamped on screen) ──
+  function onNavPanelPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    // Don't hijack taps on the clear button inside the drag handle.
+    if ((e.target as HTMLElement).closest('.route-summary-clear')) return;
+    panelDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: navPanelOffset.x,
+      baseY: navPanelOffset.y,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onNavPanelPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const drag = panelDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const rawX = drag.baseX + (e.clientX - drag.startX);
+    const rawY = drag.baseY + (e.clientY - drag.startY);
+    setNavPanelOffset(clampOffset(navPanelRef.current, rawX, rawY));
+  }
+
+  function onNavPanelPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const drag = panelDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    panelDragRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  }
+
+  // Keep a popup fully on screen with a small gap from every edge. Uses
+  // offsetLeft/Top/Width/Height (unaffected by the drag transform) measured
+  // against the map body the popup lives in.
+  function clampOffset(
+    panel: HTMLElement | null,
+    x: number,
+    y: number,
+  ): { x: number; y: number } {
+    const parent = panel?.offsetParent as HTMLElement | null;
+    if (!panel || !parent) return { x, y };
+
+    const margin = 12;
+    const left = panel.offsetLeft;
+    const top = panel.offsetTop;
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    const containerW = parent.clientWidth;
+    const containerH = parent.clientHeight;
+
+    const minX = margin - left;
+    const maxX = containerW - margin - width - left;
+    const minY = margin - top;
+    const maxY = containerH - margin - height - top;
+
+    return {
+      x: Math.max(minX, Math.min(maxX, x)),
+      y: Math.max(minY, Math.min(maxY, y)),
+    };
   }
 
   function recenterOnUser() {
@@ -1090,10 +1183,25 @@ export default function Map({
           </div>
         )}
 
-        {!reportMode && selectedRoute && (
-          <div className='nav-extras'>
+        {!reportMode && selectedRoute && !selectedPinId && (
+          <div
+            className='nav-extras'
+            ref={navPanelRef}
+            style={{
+              transform: `translate(${navPanelOffset.x}px, ${navPanelOffset.y}px)`,
+            }}
+          >
             <div className='route-summary'>
-              <div className='route-summary-head'>
+              <div
+                className='route-summary-head route-drag-handle'
+                onPointerDown={onNavPanelPointerDown}
+                onPointerMove={onNavPanelPointerMove}
+                onPointerUp={onNavPanelPointerUp}
+                onPointerCancel={onNavPanelPointerUp}
+              >
+                <span className='route-drag-grip' aria-hidden='true'>
+                  ⠿
+                </span>
                 <span className='route-summary-dest' title={destinationLabel}>
                   {destinationLabel || 'Destination'}
                 </span>
@@ -1195,10 +1303,35 @@ export default function Map({
           </button>
         )}
 
-        {reportMode && (
+        {reportMode && isMobile && !reportDetailsOpen && (
+          <div className='report-place-bar'>
+            <p className='report-place-text'>
+              Drag the 📍 to the hazard's spot, then continue.
+            </p>
+            <div className='report-place-actions'>
+              <button className='btn btn-ghost' onClick={cancelReport}>
+                Cancel
+              </button>
+              <button
+                className='btn btn-primary'
+                onClick={() => setReportDetailsOpen(true)}
+              >
+                Add details
+              </button>
+            </div>
+          </div>
+        )}
+
+        {reportMode && reportDetailsOpen && (
           <div className='report-panel'>
-            <h3 className='report-title'>Report a hazard</h3>
-            <p className='report-hint'>Drag the 📍 marker to the exact spot.</p>
+            <div className='report-drag-handle report-drag-handle-static'>
+              <h3 className='report-title'>Report a hazard</h3>
+            </div>
+            <p className='report-hint'>
+              {isMobile
+                ? 'Fill in the details below, then drop the pin.'
+                : 'Drag the 📍 marker on the map to the exact spot.'}
+            </p>
 
             <label className='report-field'>
               Radius: {reportRadius}m

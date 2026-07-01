@@ -32,7 +32,7 @@ function MapPage() {
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 1100,
-            width: 'min(400px, 90vw)',
+            width: 'min(340px, 92vw)',
           }}
         >
           <VoteCard
