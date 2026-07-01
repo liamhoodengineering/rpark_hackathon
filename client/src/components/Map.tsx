@@ -106,6 +106,7 @@ export default function Map({
   const reportMarkerRef = useRef<L.Marker | null>(null);
   const reportCircleRef = useRef<L.Circle | null>(null);
   const hasCenteredRef = useRef(false);
+  const pinsRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Latest callbacks read inside imperative Leaflet handlers.
   const onPinSelectRef = useRef(onPinSelect);
@@ -251,9 +252,42 @@ export default function Map({
 
     map.on('click', () => onPinSelectRef.current(null));
     map.on('moveend', () => fetchPinsRef.current());
+
+    // Hide the hazard markers/radii while the map is zooming so they don't
+    // awkwardly scale/streak during the animation, then reveal them shortly
+    // after the zoom settles. The reveal is debounced so rapid back-to-back
+    // zooms keep the pins hidden until the user stops, avoiding flicker. The
+    // route overlay (when navigating) is hidden/revealed on the same timer. The
+    // "you are here" dot lives in its own marker (not the pins layer), so it
+    // stays visible the entire time.
+    map.on('zoomstart', () => {
+      if (pinsRevealTimerRef.current) {
+        clearTimeout(pinsRevealTimerRef.current);
+        pinsRevealTimerRef.current = null;
+      }
+      const pinsLayer = pinsLayerRef.current;
+      if (pinsLayer && map.hasLayer(pinsLayer)) map.removeLayer(pinsLayer);
+      const routeLayer = routeLayerRef.current;
+      if (routeLayer && map.hasLayer(routeLayer)) map.removeLayer(routeLayer);
+    });
+    map.on('zoomend', () => {
+      if (pinsRevealTimerRef.current) clearTimeout(pinsRevealTimerRef.current);
+      pinsRevealTimerRef.current = setTimeout(() => {
+        pinsRevealTimerRef.current = null;
+        const pinsLayer = pinsLayerRef.current;
+        if (pinsLayer && !map.hasLayer(pinsLayer)) pinsLayer.addTo(map);
+        const routeLayer = routeLayerRef.current;
+        if (routeLayer && !map.hasLayer(routeLayer)) routeLayer.addTo(map);
+      }, 250);
+    });
+
     fetchPinsRef.current(); // initial load
 
     return () => {
+      if (pinsRevealTimerRef.current) {
+        clearTimeout(pinsRevealTimerRef.current);
+        pinsRevealTimerRef.current = null;
+      }
       map.remove();
       mapRef.current = null;
       pinsLayerRef.current = null;
