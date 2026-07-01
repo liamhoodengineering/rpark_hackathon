@@ -407,6 +407,7 @@ export default function Map({
       marker.on('click', (event) => {
         L.DomEvent.stopPropagation(event);
         onPinSelectRef.current(pin);
+        panPinAbovePopup(pin.lat, pin.lng);
       });
     }
   }, [filteredPins, selectedPinId, selectedRouteHazardIds, showRouteHazards]);
@@ -799,12 +800,20 @@ export default function Map({
 
   function focusHazardOnMap(hazard: Pin) {
     onPinSelectRef.current(hazard);
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
+    panPinAbovePopup(hazard.lat, hazard.lng, 16);
+  }
 
-    map.flyTo([hazard.lat, hazard.lng], Math.max(map.getZoom(), 16));
+  // Pan a hazard into the upper-middle of the map so the bottom popup
+  // (VoteCard) doesn't cover it. Optionally raises zoom to at least `minZoom`.
+  function panPinAbovePopup(lat: number, lng: number, minZoom?: number) {
+    const map = mapRef.current;
+    if (!map) return;
+    const targetZoom =
+      minZoom !== undefined ? Math.max(map.getZoom(), minZoom) : map.getZoom();
+    const offsetY = Math.min(150, map.getSize().y * 0.22);
+    const point = map.project([lat, lng], targetZoom);
+    const center = map.unproject(point.add(L.point(0, offsetY)), targetZoom);
+    map.flyTo(center, targetZoom, { duration: 0.4 });
   }
 
   useEffect(() => {
