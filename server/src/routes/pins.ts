@@ -128,6 +128,11 @@ router.post(
       const body = createPinSchema.parse(req.body);
       const isAnonymous = !req.auth;
 
+      // eslint-disable-next-line no-console
+      console.log(
+        `POST /pins received (lat=${body.lat}, lng=${body.lng}, anonymous=${isAnonymous})`,
+      );
+
       const nearbyPins = await PinService.listNearby({
         lat: body.lat,
         lng: body.lng,
@@ -135,6 +140,10 @@ router.post(
       });
 
       if (nearbyPins.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `POST /pins rejected: duplicate within ${PIN_CREATE_DUPLICATE_THRESHOLD_M}m of an existing pin`,
+        );
         throw new HttpError(
           409,
           'A pin already exists nearby. Please interact with the existing pin instead of creating a duplicate.',
@@ -146,7 +155,9 @@ router.post(
       }
 
       const expiresAt = body.expires_in_hours
-        ? new Date(Date.now() + body.expires_in_hours * 60 * 60 * 1000).toISOString()
+        ? new Date(
+            Date.now() + body.expires_in_hours * 60 * 60 * 1000,
+          ).toISOString()
         : isAnonymous
           ? new Date(Date.now() + ANON_PIN_TTL_MS).toISOString()
           : null;
@@ -164,10 +175,21 @@ router.post(
 
       // Best-effort: email users whose saved location is within the pin's
       // radius. Fire-and-forget so a slow/failed send never affects the response.
-      void AlertService.notifyNearbyUsers(pin).catch((error) => {
-        // eslint-disable-next-line no-console
-        console.error('Failed to send proximity alerts for pin', pin.id, error);
-      });
+      void AlertService.notifyNearbyUsers(pin)
+        .then((sent) => {
+          // eslint-disable-next-line no-console
+          console.log(
+            `Proximity alerts for pin ${pin.id}: ${sent} email(s) sent`,
+          );
+        })
+        .catch((error) => {
+          // eslint-disable-next-line no-console
+          console.error(
+            'Failed to send proximity alerts for pin',
+            pin.id,
+            error,
+          );
+        });
 
       res.status(201).json(pin);
     } catch (error) {

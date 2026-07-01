@@ -39,6 +39,19 @@ export class AlertService {
       return 0;
     }
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `AlertService: pin ${pin.id} at (${pin.lat}, ${pin.lng}) radius=${pin.radius_m}m reporter=${pin.reporter_id ?? 'anonymous'} → ${recipients.length} recipient(s) within radius`,
+    );
+
+    if (recipients.length === 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        'AlertService: no emails sent — no alerts-enabled users with a saved location inside the pin radius (the reporter is always excluded).',
+      );
+      return 0;
+    }
+
     const subject = `PinPoint alert: ${pin.severity} hazard nearby`;
     const body = buildAlertBody(pin);
 
